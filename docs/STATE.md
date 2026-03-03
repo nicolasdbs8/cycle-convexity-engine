@@ -43,6 +43,7 @@ Résultat actuel (BTC 2010–2026 approx.) :
 - Vérification anti-lookahead
 - Analyse distribution drawdowns
 - Vérification cohérence sizing
+- Sprint 2 gates: robustness_results.md + lookahead audit + monte carlo
 
 ---
 
@@ -78,3 +79,10 @@ Résultat actuel (BTC 2010–2026 approx.) :
 
 Lancer matrice de robustesse simple via GitHub Actions
 et comparer métriques (CAGR, MaxDD, ProfitFactor).
+
+---
+
+## Sprint 2 Gates (bloquants)
+- docs/robustness_results.md maintenu
+- audit anti-lookahead terminé
+- monte carlo bootstrap terminé

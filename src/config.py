@@ -22,7 +22,7 @@ class Config:
     mom_days: int = 180
 
     atr_days: int = 20
-    stop_atr_mult: float = 2.5
+    stop_atr_mult: float = 3
 
     risk_per_trade: float = 0.02
     initial_capital: float = 10_000.0

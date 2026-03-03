@@ -1,0 +1,33 @@
+name: sweep-multi
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run sweep
+        run: |
+          PYTHONPATH=. python scripts/sweep_multi.py
+
+      - name: Upload sweep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep-results
+          path: data/outputs/sweep_results.csv
+          if-no-files-found: error

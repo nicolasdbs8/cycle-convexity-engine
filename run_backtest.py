@@ -2,6 +2,8 @@ import json
 import os
 import argparse
 
+import pandas as pd
+
 from src.config import Config
 from src.data_loader import load_ohlc_csv
 from src.strategy import build_signals
@@ -31,18 +33,38 @@ def parse_args():
     # Output tag (for matrix runs)
     p.add_argument("--tag", type=str, default="default")
 
-    # Optional window
-    p.add_argument("--start-date", type=str, default=None)
+    # Trade window
+    p.add_argument("--start-date", type=str, default=None)  # trading starts here
     p.add_argument("--end-date", type=str, default=None)
 
+    # Warmup control
+    p.add_argument("--warmup-days", type=int, default=None)  # if None => auto
+
     return p.parse_args()
+
+
+def auto_warmup_days(
+    breakout_days: int,
+    mom_days: int,
+    atr_days: int,
+    regime_ma_weeks: int,
+    regime_slope_weeks: int,
+) -> int:
+    """
+    Warmup is ONLY for computing indicators/regime.
+    We keep it simple and conservative (round-ish + buffer).
+    """
+    # weekly components in days (approx)
+    regime_days = (regime_ma_weeks + regime_slope_weeks) * 7
+    base = max(breakout_days, mom_days, atr_days, regime_days)
+    return int(base + 30)  # small buffer
 
 
 def main():
     args = parse_args()
     cfg = Config()
 
-    # Override config if CLI args provided
+    # Resolve params (defaults from Config, override by CLI)
     breakout_days = args.breakout_days if args.breakout_days is not None else cfg.breakout_days
     mom_days = args.mom_days if args.mom_days is not None else cfg.mom_days
     atr_days = args.atr_days if args.atr_days is not None else cfg.atr_days
@@ -58,23 +80,49 @@ def main():
     start_date = args.start_date if args.start_date is not None else cfg.start_date
     end_date = args.end_date if args.end_date is not None else cfg.end_date
 
-    # Load data
+    # Warmup days
+    warmup_days = args.warmup_days
+    if warmup_days is None:
+        warmup_days = auto_warmup_days(
+            breakout_days=breakout_days,
+            mom_days=mom_days,
+            atr_days=atr_days,
+            regime_ma_weeks=regime_ma_weeks,
+            regime_slope_weeks=regime_slope_weeks,
+        )
+
+    # Load full data
     df = load_ohlc_csv(cfg.csv_path)
+
+    # Determine calculation window (includes warmup before start_date)
+    calc_start = None
     if start_date:
-        df = df[df.index >= start_date]
+        sd = pd.to_datetime(start_date)
+        calc_start = (sd - pd.Timedelta(days=warmup_days)).strftime("%Y-%m-%d")
+
+    if calc_start:
+        df_calc = df[df.index >= calc_start]
+    else:
+        df_calc = df
+
     if end_date:
-        df = df[df.index <= end_date]
+        df_calc = df_calc[df_calc.index <= end_date]
 
-    # Build indicators
-    df2 = build_signals(df, breakout_days=breakout_days, mom_days=mom_days, atr_days=atr_days)
-
-    # Regime (daily-aligned)
+    # Build indicators/regime on calc window (includes warmup)
+    df2 = build_signals(df_calc, breakout_days=breakout_days, mom_days=mom_days, atr_days=atr_days)
     regime = compute_weekly_regime(df2, ma_weeks=regime_ma_weeks, slope_weeks=regime_slope_weeks)
+
+    # Trade window slice (THIS is what fixes the subperiod bias)
+    df_trade = df2
+    regime_trade = regime
+    if start_date:
+        df_trade = df_trade[df_trade.index >= start_date]
+        regime_trade = regime_trade.reindex(df_trade.index)
 
     # Backtest
     eq_df, trades_df = run_backtest_btc_mvp(
-        df=df2,
-        regime=regime,
+        df=df_trade,
+        regime=regime_trade,
         fee_rate=fee_rate,
         slippage_rate=slippage_rate,
         initial_capital=cfg.initial_capital,
@@ -93,7 +141,6 @@ def main():
 
     summary = summarize(eq_df, trades_df)
 
-    # Print summary + run params (so logs are self-contained)
     payload = {
         "tag": args.tag,
         "params": {
@@ -108,6 +155,8 @@ def main():
             "slippage_rate": slippage_rate,
             "start_date": start_date,
             "end_date": end_date,
+            "warmup_days": warmup_days,
+            "calc_start": calc_start,
         },
         "summary": summary,
     }

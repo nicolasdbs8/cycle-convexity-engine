@@ -1,0 +1,91 @@
+name: subperiods-matrix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Full history (baseline reference) ---
+          - tag: ma100_full
+            regime_ma_weeks: 100
+            start_date: ""
+          - tag: ma200_full
+            regime_ma_weeks: 200
+            start_date: ""
+
+          # --- Subperiods: exclude early BTC era ---
+          - tag: ma100_from_2014
+            regime_ma_weeks: 100
+            start_date: "2014-01-01"
+          - tag: ma200_from_2014
+            regime_ma_weeks: 200
+            start_date: "2014-01-01"
+
+          - tag: ma100_from_2016
+            regime_ma_weeks: 100
+            start_date: "2016-01-01"
+          - tag: ma200_from_2016
+            regime_ma_weeks: 200
+            start_date: "2016-01-01"
+
+          - tag: ma100_from_2018
+            regime_ma_weeks: 100
+            start_date: "2018-01-01"
+          - tag: ma200_from_2018
+            regime_ma_weeks: 200
+            start_date: "2018-01-01"
+
+          - tag: ma100_from_2020
+            regime_ma_weeks: 100
+            start_date: "2020-01-01"
+          - tag: ma200_from_2020
+            regime_ma_weeks: 200
+            start_date: "2020-01-01"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backtest (subperiods)
+        run: |
+          CMD="python run_backtest.py \
+            --tag '${{ matrix.tag }}' \
+            --breakout-days 180 \
+            --stop-atr-mult 2.0 \
+            --fee-rate 0.001 \
+            --slippage-rate 0.0005 \
+            --regime-ma-weeks '${{ matrix.regime_ma_weeks }}'"
+
+          if [ -n "${{ matrix.start_date }}" ]; then
+            CMD="$CMD --start-date '${{ matrix.start_date }}'"
+          fi
+
+          echo "Running: $CMD"
+          eval $CMD
+
+      - name: Show trades head
+        run: |
+          echo "==== Trades head (${{ matrix.tag }}) ===="
+          head -n 6 "data/outputs/${{ matrix.tag }}/trades.csv" || true
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs-${{ matrix.tag }}
+          path: data/outputs/${{ matrix.tag }}/
+          if-no-files-found: error

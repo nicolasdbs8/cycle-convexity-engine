@@ -18,7 +18,7 @@ class Config:
     regime_slope_weeks: int = 20
     regime_use_slope: int = 0  # 1=ON, 0=OFF
 
-    breakout_days: int = 180
+    breakout_days: int = 150
     mom_days: int = 180
 
     atr_days: int = 20

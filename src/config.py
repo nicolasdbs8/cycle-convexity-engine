@@ -24,7 +24,7 @@ class Config:
     atr_days: int = 20
     stop_atr_mult: float = 2.5
 
-    risk_per_trade: float = 0.02
+    risk_per_trade: float = 0.025
     initial_capital: float = 10_000.0
 
     # Portfolio (multi-asset)

@@ -27,5 +27,10 @@ class Config:
     risk_per_trade: float = 0.02
     initial_capital: float = 10_000.0
 
+    #Multi portfolio
+
+    max_positions = 3
+    risk_cap_total = 0.06
+
     # Execution
     allow_one_position: bool = True

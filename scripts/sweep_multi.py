@@ -1,6 +1,7 @@
 import os
 import itertools
 import pandas as pd
+from dataclasses import replace
 
 from src.config import Config
 from src.data_panel import load_panel
@@ -16,34 +17,31 @@ RISK_CAP = [0.045, 0.06, 0.075]
 
 SYMBOLS = ["BTC", "ETH", "SPY", "QQQ", "GLD", "TLT", "USO"]
 
+
 def main():
+    base = Config()
 
-    cfg = Config()
-
+    # Load once
     sym_to_path = {s: f"data/raw/{s}.csv" for s in SYMBOLS}
     panel = load_panel(sym_to_path)
 
     results = []
 
-    grid = itertools.product(
-        BREAKOUTS,
-        STOPS,
-        REGIME_MA,
-        RISK_PER_TRADE,
-        RISK_CAP,
-    )
+    grid = itertools.product(BREAKOUTS, STOPS, REGIME_MA, RISK_PER_TRADE, RISK_CAP)
 
     for breakout, stop, regime_ma, rpt, rcap in grid:
-
-        # Skip incoherent combos
-        if rpt * cfg.max_positions > rcap:
+        # Enforce your portfolio constraint: 3 positions max and risk cap total (e.g. 0.06)
+        if rpt * base.max_positions > rcap:
             continue
 
-        cfg.breakout_days = breakout
-        cfg.stop_atr_mult = stop
-        cfg.regime_ma_weeks = regime_ma
-        cfg.risk_per_trade = rpt
-        cfg.risk_cap_total = rcap
+        cfg = replace(
+            base,
+            breakout_days=breakout,
+            stop_atr_mult=stop,
+            regime_ma_weeks=regime_ma,
+            risk_per_trade=rpt,
+            risk_cap_total=rcap,
+        )
 
         eq_df, tr_df = run_backtest_multi_mvp(
             panel=panel,
@@ -64,24 +62,27 @@ def main():
 
         summary = summarize(eq_df, tr_df)
 
-        results.append({
-            "breakout": breakout,
-            "stop": stop,
-            "regime_ma": regime_ma,
-            "risk_per_trade": rpt,
-            "risk_cap": rcap,
-            **summary
-        })
+        results.append(
+            {
+                "breakout_days": breakout,
+                "stop_atr_mult": stop,
+                "regime_ma_weeks": regime_ma,
+                "risk_per_trade": rpt,
+                "risk_cap_total": rcap,
+                **summary,
+            }
+        )
 
         print("Done:", breakout, stop, regime_ma, rpt, rcap)
 
     df = pd.DataFrame(results)
-
     os.makedirs("data/outputs", exist_ok=True)
-    df.to_csv("data/outputs/sweep_results.csv", index=False)
+    out_path = "data/outputs/sweep_results.csv"
+    df.to_csv(out_path, index=False)
 
     print("\nSweep finished.")
-    print("Results saved to data/outputs/sweep_results.csv")
+    print("Saved:", out_path)
+
 
 if __name__ == "__main__":
     main()

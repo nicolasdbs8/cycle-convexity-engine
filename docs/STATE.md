@@ -1,14 +1,15 @@
 # STATE.md
 
 ## Version actuelle
-v0.0.0
+v0.1.0
 
 ## Implémenté
-- Rien pour l’instant (repo initialisé)
+- MVP BTC run OK + outputs générés
 
 ## En cours
 - Définition structure repo
 - Implémentation Trend v1
+- Sprint 2 robustesse (sensibilité + sanity)
 
 ## À faire
 - Moteur backtest minimal

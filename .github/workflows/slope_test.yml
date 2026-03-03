@@ -1,0 +1,90 @@
+name: slope-test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: ma100_slope_on_full
+            start_date: ""
+            regime_ma_weeks: 100
+            regime_use_slope: 1
+
+          - tag: ma100_slope_off_full
+            start_date: ""
+            regime_ma_weeks: 100
+            regime_use_slope: 0
+
+          - tag: ma100_slope_on_2016
+            start_date: "2016-01-01"
+            regime_ma_weeks: 100
+            regime_use_slope: 1
+
+          - tag: ma100_slope_off_2016
+            start_date: "2016-01-01"
+            regime_ma_weeks: 100
+            regime_use_slope: 0
+
+          - tag: ma100_slope_on_2018
+            start_date: "2018-01-01"
+            regime_ma_weeks: 100
+            regime_use_slope: 1
+
+          - tag: ma100_slope_off_2018
+            start_date: "2018-01-01"
+            regime_ma_weeks: 100
+            regime_use_slope: 0
+
+          - tag: ma100_slope_on_2020
+            start_date: "2020-01-01"
+            regime_ma_weeks: 100
+            regime_use_slope: 1
+
+          - tag: ma100_slope_off_2020
+            start_date: "2020-01-01"
+            regime_ma_weeks: 100
+            regime_use_slope: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run
+        run: |
+          CMD="python run_backtest.py \
+            --tag '${{ matrix.tag }}' \
+            --breakout-days 180 \
+            --stop-atr-mult 2.0 \
+            --fee-rate 0.001 \
+            --slippage-rate 0.0005 \
+            --regime-ma-weeks '${{ matrix.regime_ma_weeks }}' \
+            --regime-use-slope '${{ matrix.regime_use_slope }}'"
+
+          if [ -n "${{ matrix.start_date }}" ]; then
+            CMD="$CMD --start-date '${{ matrix.start_date }}'"
+          fi
+
+          echo "Running: $CMD"
+          eval $CMD
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs-${{ matrix.tag }}
+          path: data/outputs/${{ matrix.tag }}/
+          if-no-files-found: error

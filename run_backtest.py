@@ -25,7 +25,7 @@ def parse_args():
     # Regime overrides
     p.add_argument("--regime-ma-weeks", type=int, default=None)
     p.add_argument("--regime-slope-weeks", type=int, default=None)
-    p.add_argument("--regime-use-slope", type=int, default=1)  # 1=ON, 0=OFF
+    p.add_argument("--regime-use-slope", type=int, default=0)  # 1=ON, 0=OFF
 
     # Costs overrides
     p.add_argument("--fee-rate", type=float, default=None)

@@ -11,38 +11,58 @@ jobs:
       matrix:
         include:
           # Base (ton run actuel)
-          - tag: b180_s2_cost1
+          - tag: b180_s2_cost1_ma200
             breakout_days: 180
             stop_atr_mult: 2.0
             fee_rate: 0.001
             slippage_rate: 0.0005
+            regime_ma_weeks: 200
 
           # Breakout sensitivity
-          - tag: b150_s2_cost1
+          - tag: b150_s2_cost1_ma200
             breakout_days: 150
             stop_atr_mult: 2.0
             fee_rate: 0.001
             slippage_rate: 0.0005
+            regime_ma_weeks: 200
 
-          - tag: b220_s2_cost1
+          - tag: b220_s2_cost1_ma200
             breakout_days: 220
             stop_atr_mult: 2.0
             fee_rate: 0.001
             slippage_rate: 0.0005
+            regime_ma_weeks: 200
 
           # Stop sensitivity
-          - tag: b180_s3_cost1
+          - tag: b180_s3_cost1_ma200
             breakout_days: 180
             stop_atr_mult: 3.0
             fee_rate: 0.001
             slippage_rate: 0.0005
+            regime_ma_weeks: 200
 
           # Cost sensitivity (x2)
-          - tag: b180_s2_cost2
+          - tag: b180_s2_cost2_ma200
             breakout_days: 180
             stop_atr_mult: 2.0
             fee_rate: 0.002
             slippage_rate: 0.001
+            regime_ma_weeks: 200
+
+          # Regime MA sensitivity (keep everything else fixed)
+          - tag: b180_s2_cost1_ma150
+            breakout_days: 180
+            stop_atr_mult: 2.0
+            fee_rate: 0.001
+            slippage_rate: 0.0005
+            regime_ma_weeks: 150
+
+          - tag: b180_s2_cost1_ma100
+            breakout_days: 180
+            stop_atr_mult: 2.0
+            fee_rate: 0.001
+            slippage_rate: 0.0005
+            regime_ma_weeks: 100
 
     steps:
       - name: Checkout
@@ -65,13 +85,12 @@ jobs:
             --breakout-days "${{ matrix.breakout_days }}" \
             --stop-atr-mult "${{ matrix.stop_atr_mult }}" \
             --fee-rate "${{ matrix.fee_rate }}" \
-            --slippage-rate "${{ matrix.slippage_rate }}"
+            --slippage-rate "${{ matrix.slippage_rate }}" \
+            --regime-ma-weeks "${{ matrix.regime_ma_weeks }}"
 
       - name: Show trades head
         run: |
-          echo "==== Trades head (${{
-            matrix.tag
-          }}) ===="
+          echo "==== Trades head (${{ matrix.tag }}) ===="
           head -n 6 "data/outputs/${{ matrix.tag }}/trades.csv" || true
 
       - name: Upload outputs

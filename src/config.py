@@ -14,7 +14,7 @@ class Config:
     slippage_rate: float = 0.0005
 
     # Strategy params
-    regime_ma_weeks: int = 75
+    regime_ma_weeks: int = 52
     regime_slope_weeks: int = 20
     regime_use_slope: int = 0  # 1=ON, 0=OFF
 

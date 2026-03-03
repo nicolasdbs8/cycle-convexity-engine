@@ -1,0 +1,34 @@
+name: walk-forward
+
+on:
+  workflow_dispatch:
+
+jobs:
+  wf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install python-dateutil
+
+      - name: Run walk-forward
+        run: |
+          PYTHONPATH=. python scripts/walk_forward.py \
+            --tag wf_b150_stop2_5_ma52_all \
+            --symbols BTC,ETH,SPY,QQQ,GLD,TLT,USO \
+            --train_years 8 --test_years 2 --step_years 2 --warmup_days 800
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: walk-forward-results
+          path: data/outputs/wf_b150_stop2_5_ma52_all/
+          if-no-files-found: error

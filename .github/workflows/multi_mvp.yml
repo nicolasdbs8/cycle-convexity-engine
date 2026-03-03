@@ -7,7 +7,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      TAG: robust_b220_s2_5_ma52
+      TAG: robust_b220_s3_ma52
 
     steps:
       - uses: actions/checkout@v4

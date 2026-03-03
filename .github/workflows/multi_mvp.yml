@@ -1,0 +1,31 @@
+name: multi-mvp
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run multi MVP (BTC,ETH,SPY,QQQ,GLD,TLT,USO)
+        run: |
+          PYTHONPATH=. python run_backtest_multi.py --tag mvp_macro_v1 --symbols BTC,ETH,SPY,QQQ,GLD,TLT,USO
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs-mvp-macro-v1
+          path: data/outputs/mvp_macro_v1/
+          if-no-files-found: error

@@ -16,6 +16,7 @@ class Config:
     # Strategy params (round numbers, non-optimized)
     regime_ma_weeks: int = 100      # weekly MA
     regime_slope_weeks: int = 20    # slope window in weeks
+    regime_use_slope = 0  # 1=ON, 0=OFF
 
     breakout_days: int = 180
     mom_days: int = 180             # keep simple: close/close[n]-1

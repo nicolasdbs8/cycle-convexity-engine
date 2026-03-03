@@ -22,9 +22,9 @@ jobs:
       - name: Run walk-forward
         run: |
           PYTHONPATH=. python scripts/walk_forward.py \
-            --tag wf_b150_stop2_5_ma52_all \
-            --symbols BTC,ETH,SPY,QQQ,GLD,TLT,USO \
-            --train_years 5 --test_years 2 --step_years 1 --warmup_days 800
+            --tag wf_etf_b150_stop2_5_ma52 \
+            --symbols SPY,QQQ,GLD,TLT,USO \
+            --train_years 10 --test_years 3 --step_years 2 --warmup_days 800
 
       - name: Upload outputs
         uses: actions/upload-artifact@v4

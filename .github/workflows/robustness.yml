@@ -1,0 +1,82 @@
+name: robustness-matrix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Base (ton run actuel)
+          - tag: b180_s2_cost1
+            breakout_days: 180
+            stop_atr_mult: 2.0
+            fee_rate: 0.001
+            slippage_rate: 0.0005
+
+          # Breakout sensitivity
+          - tag: b150_s2_cost1
+            breakout_days: 150
+            stop_atr_mult: 2.0
+            fee_rate: 0.001
+            slippage_rate: 0.0005
+
+          - tag: b220_s2_cost1
+            breakout_days: 220
+            stop_atr_mult: 2.0
+            fee_rate: 0.001
+            slippage_rate: 0.0005
+
+          # Stop sensitivity
+          - tag: b180_s3_cost1
+            breakout_days: 180
+            stop_atr_mult: 3.0
+            fee_rate: 0.001
+            slippage_rate: 0.0005
+
+          # Cost sensitivity (x2)
+          - tag: b180_s2_cost2
+            breakout_days: 180
+            stop_atr_mult: 2.0
+            fee_rate: 0.002
+            slippage_rate: 0.001
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backtest (matrix)
+        run: |
+          python run_backtest.py \
+            --tag "${{ matrix.tag }}" \
+            --breakout-days "${{ matrix.breakout_days }}" \
+            --stop-atr-mult "${{ matrix.stop_atr_mult }}" \
+            --fee-rate "${{ matrix.fee_rate }}" \
+            --slippage-rate "${{ matrix.slippage_rate }}"
+
+      - name: Show trades head
+        run: |
+          echo "==== Trades head (${{
+            matrix.tag
+          }}) ===="
+          head -n 6 "data/outputs/${{ matrix.tag }}/trades.csv" || true
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs-${{ matrix.tag }}
+          path: data/outputs/${{ matrix.tag }}/
+          if-no-files-found: error

@@ -23,7 +23,7 @@ jobs:
 
       - name: Run multi MVP
         run: |
-          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols BTC,ETH,SPY,QQQ,GLD,TLT,USO
+          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols SPY,QQQ,GLD,TLT,USO
 
       - name: Upload outputs
         uses: actions/upload-artifact@v4

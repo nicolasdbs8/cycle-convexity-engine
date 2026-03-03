@@ -53,22 +53,44 @@ Ce document est la checklist opérationnelle. Il sert à:
 
 ---
 
-## Sprint 2 — Robustesse (avant multi-assets)
+## Sprint 2 — Robustesse (GATES avant multi-assets)
+
+### 2.0 Baseline & gouvernance
+- [ ] Baseline fixée et commitée (régime MA100 weekly par défaut)
+- [ ] Chaque modification stratégique = 1 commit + tag output + note dans STATE.md
+- [ ] Résultats clés consignés dans `docs/robustness_results.md`
+
 ### 2.1 Sensibilité paramètres (non-optimisée)
 - [ ] breakout_days: 150 / 180 / 220
 - [ ] stop_atr_mult: 2 / 3
 - [ ] coûts: x1 / x2 (fee+slippage)
-- [ ] régime: slope_weeks 10 / 20 / 30 (ronds)
+- [ ] régime: MA100 / MA200 (weekly) avec warmup
 
-### 2.2 Découpage par régimes
-- [ ] Sous-périodes bull / bear / range (qualitatif)
-- [ ] Vérifier: “convexité” (gains concentrés) vs “ruine”
+### 2.2 Tests sous-périodes (avec warmup correct)
+- [ ] 2014+ : MA100 vs MA200
+- [ ] 2016+ : MA100 vs MA200
+- [ ] 2018+ : MA100 vs MA200
+- [ ] 2020+ : MA100 vs MA200
+- [ ] Vérifier que l’equity_curve commence bien à start_date
 
-### 2.3 Monte Carlo (MVP)
-- [ ] Bootstrap des trades (ou shuffle) sur R/PnL
-- [ ] Distribution EndEquity
-- [ ] Distribution MaxDD
-- [ ] Estimation probabilité de ruine technique
+### 2.3 Audit anti-lookahead (obligatoire)
+- [ ] rolling high utilisé via `shift(1)` (preuve par test)
+- [ ] pas de futur dans ATR (preuve par test)
+- [ ] régime weekly forward-fill uniquement (preuve par test)
+- [ ] entrée toujours au next open (preuve par test)
+- [ ] stop intraday ne lit pas high/low futur (preuve par logique + test)
+
+### 2.4 Monte Carlo (MVP)
+- [ ] Bootstrap des trades (PnL ou returns) 5 000 itérations
+- [ ] Distribution EndEquity (p10/p50/p90)
+- [ ] Distribution MaxDD (p10/p50/p90)
+- [ ] Estimation simple probabilité EndEquity < StartEquity
+
+### Definition of Done Sprint 2
+- [ ] Baseline MA100 confirmée OU rejetée par résultats
+- [ ] robustesse documentée (docs/robustness_results.md)
+- [ ] lookahead audit terminé
+- [ ] monte carlo terminé
 
 ---
 

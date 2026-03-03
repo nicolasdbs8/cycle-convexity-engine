@@ -10,7 +10,7 @@ def build_signals(df: pd.DataFrame, breakout_days: int, mom_days: int, atr_days:
     """
     out = df.copy()
     # Use prior HH to avoid lookahead: breakout if close > HH_prev
-    out["hh"] = rolling_high(out["close"], breakout_days)
+    out["hh"] = rolling_high(out["high"], breakout_days)
     out["hh_prev"] = out["hh"].shift(1)
 
     out["mom"] = momentum_return(out["close"], mom_days)

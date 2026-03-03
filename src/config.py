@@ -14,7 +14,7 @@ class Config:
     slippage_rate: float = 0.0005  # 0.05%
 
     # Strategy params (round numbers, non-optimized)
-    regime_ma_weeks: int = 200      # weekly MA
+    regime_ma_weeks: int = 100      # weekly MA
     regime_slope_weeks: int = 20    # slope window in weeks
 
     breakout_days: int = 180

@@ -7,7 +7,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      TAG: robust_b180_s2_5_ma52_all
+      TAG: robust_b180_s2_5_ma52_all_rpt_0_025
 
     steps:
       - uses: actions/checkout@v4

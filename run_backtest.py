@@ -25,6 +25,7 @@ def parse_args():
     # Regime overrides
     p.add_argument("--regime-ma-weeks", type=int, default=None)
     p.add_argument("--regime-slope-weeks", type=int, default=None)
+    p.add_argument("--regime-use-slope", type=int, default=1)  # 1=ON, 0=OFF
 
     # Costs overrides
     p.add_argument("--fee-rate", type=float, default=None)
@@ -74,6 +75,11 @@ def main():
     regime_ma_weeks = args.regime_ma_weeks if args.regime_ma_weeks is not None else cfg.regime_ma_weeks
     regime_slope_weeks = args.regime_slope_weeks if args.regime_slope_weeks is not None else cfg.regime_slope_weeks
 
+    # Regime slope switch
+    if args.regime_use_slope not in (0, 1):
+        raise ValueError("--regime-use-slope must be 0 or 1")
+    use_slope = bool(args.regime_use_slope)
+
     fee_rate = args.fee_rate if args.fee_rate is not None else cfg.fee_rate
     slippage_rate = args.slippage_rate if args.slippage_rate is not None else cfg.slippage_rate
 
@@ -110,9 +116,14 @@ def main():
 
     # Build indicators/regime on calc window (includes warmup)
     df2 = build_signals(df_calc, breakout_days=breakout_days, mom_days=mom_days, atr_days=atr_days)
-    regime = compute_weekly_regime(df2, ma_weeks=regime_ma_weeks, slope_weeks=regime_slope_weeks)
+    regime = compute_weekly_regime(
+        df2,
+        ma_weeks=regime_ma_weeks,
+        slope_weeks=regime_slope_weeks,
+        use_slope=use_slope,
+    )
 
-    # Trade window slice (THIS is what fixes the subperiod bias)
+    # Trade window slice (THIS fixes the subperiod bias)
     df_trade = df2
     regime_trade = regime
     if start_date:
@@ -151,6 +162,7 @@ def main():
             "risk_per_trade": risk_per_trade,
             "regime_ma_weeks": regime_ma_weeks,
             "regime_slope_weeks": regime_slope_weeks,
+            "regime_use_slope": int(use_slope),
             "fee_rate": fee_rate,
             "slippage_rate": slippage_rate,
             "start_date": start_date,

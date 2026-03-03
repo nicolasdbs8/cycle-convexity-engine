@@ -19,4 +19,4 @@ jobs:
           pip install -r requirements.txt
 
       - run: |
-          python scripts/audit_lookahead.py
+          PYTHONPATH=. python scripts/audit_lookahead.py

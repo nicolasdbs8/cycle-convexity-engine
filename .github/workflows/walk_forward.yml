@@ -30,5 +30,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: walk-forward-results
-          path: data/outputs/wf_b150_stop2_5_ma52_all/
+          path: data/outputs/
           if-no-files-found: error

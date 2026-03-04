@@ -38,7 +38,7 @@ jobs:
           if-no-files-found: error
           
       # Backtest
-      - name: Run multi MVP (2005-2014)
+      - name: Run multi MVP (2005-2012)
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag "test_2005_2012" \

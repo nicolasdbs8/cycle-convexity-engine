@@ -1,88 +1,96 @@
 # STATE.md
 
 ## Version actuelle
-v0.1.0
-
-## Implémenté (Sprint 1 — MVP BTC single-asset)
-
-- Data loader CSV (Date,Open,High,Low,Close)
-- Indicateurs :
-  - SMA
-  - ATR (True Range + moyenne)
-  - Rolling High (anti-lookahead via shift(1))
-  - Momentum return
-- Régime BTC weekly :
-  - Close > MA200 weekly
-  - Slope MA positive
-  - Forward-fill vers daily
-- Moteur backtest :
-  - Signal au close, exécution next open
-  - Stop intraday (2×ATR)
-  - Sortie régime next open
-  - Spot-only
-  - Fees + slippage appliqués
-- Artefacts :
-  - equity_curve.csv
-  - trades.csv
-- Résumé JSON (CAGR, MaxDD, ProfitFactor, etc.)
-
-Résultat actuel (BTC 2010–2026 approx.) :
-- CAGR ≈ 18%
-- MaxDD ≈ -81%
-- 6 trades
-- ProfitFactor ≈ 15.7
+v0.2.0
 
 ---
 
-## En cours (Sprint 2 — Robustesse)
+# Implémenté
 
-- Sensibilité paramètres :
-  - breakout_days
-  - stop_atr_mult
-  - coûts
-- Vérification anti-lookahead
-- Analyse distribution drawdowns
-- Vérification cohérence sizing
-- Sprint 2 gates: robustness_results.md + lookahead audit + monte carlo
+## Moteur de backtest
 
----
+- exécution next open
+- stops intraday
+- gestion du risque portefeuille
+- fees + slippage
 
-## À faire (prochaines étapes)
+Artefacts :
 
-- Matrice de tests robustesse (automatisée via Actions)
-- Monte Carlo bootstrap des trades
-- Analyse sous-périodes (bull/bear/range)
-- Visualisation equity (export simple)
+- equity_curve.csv
+- trades.csv
+- summary.json
 
 ---
 
-## Hypothèses critiques à tester
+## Indicateurs
 
-- Robustesse aux coûts (x2 fees/slippage)
-- Robustesse breakout 150/180/220
-- Robustesse stop 2×ATR vs 3×ATR
-- Stabilité performance hors 2015–2017 et 2020–2021
-- Impact du régime MA weekly
-
----
-
-## Risques identifiés
-
-- Concentration des gains sur 1–2 trades
-- Max Drawdown extrême (-81%)
-- Échantillon faible (6 trades)
-- Forte dépendance aux cycles BTC
+- SMA
+- ATR
+- rolling high (anti-lookahead)
+- momentum
 
 ---
 
-## Prochain objectif concret
+## Multi-assets
 
-Lancer matrice de robustesse simple via GitHub Actions
-et comparer métriques (CAGR, MaxDD, ProfitFactor).
+Univers :
+
+- BTC
+- ETH
+- SPY
+- QQQ
+- GLD
+- TLT
+- USO
+
+Loader panel multi-symbol.
 
 ---
 
-## Sprint 2 Gates (bloquants)
-- docs/robustness_results.md maintenu
-- audit anti-lookahead terminé
-- monte carlo bootstrap terminé
+## Validation
+
+Tests réalisés :
+
+- sensibilité paramètres
+- Monte Carlo
+- walk-forward
+- audit anti-lookahead
+
+---
+
+## Résultats principaux
+
+Configuration actuelle :
+
+- breakout = 150
+- stop = 2.5 ATR
+- regime = MA52 weekly
+- max positions = 3
+- risk cap total = 0.06
+
+Performance ETF walk-forward :
+
+- CAGR médian ≈ 7 %
+- PF toujours > 1
+- MaxDD ≈ -22 %
+
+---
+
+# Limites actuelles
+
+- univers crypto réduit (BTC/ETH)
+- pas encore de sélection top N
+- pas encore d’allocation core / satellite
+- pas encore d’execution layer réel
+
+---
+
+# Prochain objectif
+
+Implémenter :
+
+core ETF  
++  
+satellite crypto
+
+Architecture portefeuille séparée.

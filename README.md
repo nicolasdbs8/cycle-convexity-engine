@@ -29,11 +29,11 @@ Le projet suit une logique **institutionnelle** :
 
 Le moteur est un **trend-following multi-actifs core / satellite**.
 
-Principe :
+Pipeline logique :
 
 1. Détection d’un breakout structurel
 2. Filtrage par régime de marché
-3. sizing basé sur volatilité
+3. position sizing basé sur le risque
 4. gestion du risque portefeuille
 5. architecture **core ETF + satellite crypto**
 
@@ -43,19 +43,27 @@ Principe :
 
 Configuration de référence :
 
-- Breakout : 150 jours
-- Stop : 2.5 × ATR(20)
-- Régime : MA52 weekly
-- Max positions : 3
-- Risk cap total : 0.06
+Breakout : 150 jours  
+Stop : 2.5 × ATR(20)  
+Régime : MA52 weekly  
+Max positions : 3  
+Risk cap total : 0.06  
+
+Execution :
+
+signal close t  
+entry open t+1  
+
+Costs :
+
+fee = 0.1 %  
+slippage = 0.05 %
 
 ---
 
 # Univers actuel
 
 ## Core ETF
-
-Univers macro diversifié :
 
 SPY  
 QQQ  
@@ -69,14 +77,12 @@ SHY
 
 Objectif :
 
-- capter les grandes tendances macro
+- capter les tendances macro
 - stabiliser la volatilité du portefeuille
 
 ---
 
 ## Satellite crypto
-
-Univers large caps :
 
 BTC  
 ETH  
@@ -90,51 +96,50 @@ LINK
 
 Sélection dynamique :
 
-- **top N momentum mensuel**
-- univers figé par mois
+- univers recalculé mensuellement
+- basé sur liquidité / momentum
+- univers figé pendant le mois
 - anti-lookahead strict
 
+Pipeline :
+
+scripts/make_crypto_monthly.py
+
 ---
 
-# Structure core / satellite
+# Structure du portefeuille
 
-Allocation actuelle :
+Architecture actuelle :
 
-
-core = 90 %
+core = 90 %  
 satellite = 10 %
 
+Les deux sleeves sont :
 
-Les deux sleeves sont backtestés séparément puis agrégés.
+- backtestées séparément
+- puis agrégées dans le portefeuille final
 
 ---
 
-# Validation actuelle
+# Résultats indicatifs
 
-Tests réalisés :
+Sous-périodes :
 
-- sensibilité paramètres
-- audit anti-lookahead
-- Monte Carlo
-- walk-forward
-- tests sous-périodes
+2005–2012  
+CAGR ≈ 2 %  
+MaxDD ≈ −9 %
 
-Résultats typiques :
+2013–2018  
+CAGR ≈ −1 %  
+MaxDD ≈ −17 %
 
+2019–2026  
+CAGR ≈ 3–10 % selon configuration
 
-2005-2014
-CAGR ≈ 3 %
-MaxDD ≈ -17 %
+Long run (avec crypto) :
 
-2015-2026
-CAGR ≈ 10 %
-MaxDD ≈ -35 %
-
-
-Interprétation :
-
-- core stabilise le portefeuille
-- crypto apporte la convexité
+CAGR ≈ 10–15 %  
+MaxDD ≈ −16 à −26 %
 
 ---
 
@@ -191,7 +196,8 @@ Il cherche :
 
 Prochaines améliorations :
 
-1. volatility targeting portefeuille
-2. diversification supplémentaire du core
-3. éventuel second breakout
-4. execution layer (paper trading)
+1. position sizing par volatilité d’actif
+2. amélioration des exits ATR
+3. volatility targeting portefeuille
+4. diversification supplémentaire du core
+5. execution layer (paper trading)

@@ -46,9 +46,12 @@ jobs:
             --start 2005-01-03 \
             --end 2014-12-31
 
-      - name: Upload outputs
+      - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: outputs-${{ env.TAG }}
-          path: data/outputs/${{ env.TAG }}/
-          if-no-files-found: error
+          name: outputs
+          path: |
+            data/outputs/**
+            data/universe/crypto_monthly.csv
+          if-no-files-found: warn

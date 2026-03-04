@@ -7,6 +7,7 @@ from .backtest import apply_costs
 from .strategy import build_signals
 from .regime import compute_weekly_regime
 
+
 def run_backtest_multi_mvp(
     panel: Dict[str, pd.DataFrame],
     fee_rate: float,
@@ -29,7 +30,12 @@ def run_backtest_multi_mvp(
     sym_regime = {}
     for sym, df in panel.items():
         df2 = build_signals(df, breakout_days, mom_days, atr_days)
-        reg = compute_weekly_regime(df2, regime_ma_weeks, regime_slope_weeks, use_slope=regime_use_slope)
+        reg = compute_weekly_regime(
+            df2,
+            regime_ma_weeks,
+            regime_slope_weeks,
+            use_slope=regime_use_slope,
+        )
         sym_data[sym] = df2
         sym_regime[sym] = reg
 
@@ -81,8 +87,8 @@ def run_backtest_multi_mvp(
     trades: List[dict] = []
 
     # pending orders keyed by symbol
-    pending_entry = {}  # sym -> dict(signal_date, atr_at_signal)
-    pending_exit = set()  # symbols to exit next open
+    pending_entry = {}   # sym -> dict(signal_date, atr_at_signal)
+    pending_exit = set() # symbols to exit next open
 
     for i, dt in enumerate(common_idx):
         # marks at close for equity curve
@@ -150,12 +156,22 @@ def run_backtest_multi_mvp(
                 continue
 
             # risk sizing
-            marks = {s: float(sym_data[s].loc[dt, "open"]) for s in sym_data.keys()}
-            eq_open = pf.equity(marks)
-            print("[debug] entry_try", sym, "dt", str(dt.date()), "eq_open", eq_open, "cash", pf.cash)
+            marks_open = {s: float(sym_data[s].loc[dt, "open"]) for s in sym_data.keys()}
+            eq_open = pf.equity(marks_open)
             risk_cash = eq_open * risk_per_trade
             per_unit_risk = max(exec_px - stop_price, 1e-12)
             qty = risk_cash / per_unit_risk
+
+            # --- CASH CAP (NO LEVERAGE) ---
+            # Total cost = qty*exec_px + fee, fee = (qty*exec_px)*fee_rate
+            # => total = qty*exec_px*(1+fee_rate) must be <= pf.cash
+            max_qty_cash = pf.cash / (exec_px * (1.0 + fee_rate))
+            if qty > max_qty_cash:
+                qty = max_qty_cash
+            if qty <= 0:
+                pending_entry.pop(sym, None)
+                continue
+            # --- END CASH CAP ---
 
             notional = qty * exec_px
             fee = notional * fee_rate
@@ -165,9 +181,22 @@ def run_backtest_multi_mvp(
             budget = risk_cap_total * eq_open
             if (pf.total_stop_risk() + stop_risk_cash) <= budget and pf.can_open(sym, max_positions):
                 ok = pf.open_long(sym, qty, exec_px, dt, stop_price, fee)
-                if ok:
-                    # entry trade record will be completed on exit
-                    pass
+                if not ok:
+                    # Helpful debug if something else blocks the entry
+                    print(
+                        "[debug] open_long_failed",
+                        sym,
+                        "dt",
+                        str(dt.date()),
+                        "qty",
+                        float(qty),
+                        "px",
+                        float(exec_px),
+                        "fee",
+                        float(fee),
+                        "cash",
+                        float(pf.cash),
+                    )
 
             pending_entry.pop(sym, None)
 
@@ -206,4 +235,5 @@ def run_backtest_multi_mvp(
             - trades_df["exit_fee"]
             - (trades_df["qty"] * trades_df["entry_price"] + trades_df["entry_fee"])
         )
+
     return eq_df, trades_df

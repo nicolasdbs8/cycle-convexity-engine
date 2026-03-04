@@ -24,7 +24,7 @@ jobs:
       # NEW — build crypto monthly universe
       - name: Build crypto monthly universe
         run: |
-          python tools/make_crypto_monthly.py --n 3 --mom_bars 180
+          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
 
       # Backtest
       - name: Run multi MVP

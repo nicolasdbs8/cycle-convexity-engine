@@ -202,7 +202,8 @@ def run_backtest_multi_mvp(
             rpt_eff = rpt * float(vol_scaler)
             cap_eff = float(risk_cap_total) * float(vol_scaler)
 
-            risk_cash = eq_open * rpt_eff
+            n = max(len(pf.positions), 1)
+            risk_cash = eq_open * rpt_eff / np.sqrt(n)
             per_unit_risk = max(exec_px - stop_price, 1e-12)
             qty = risk_cash / per_unit_risk
 

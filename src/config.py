@@ -30,3 +30,8 @@ class Config:
     # Portfolio (multi-asset)
     max_positions: int = 3
     risk_cap_total: float = 0.06
+
+    # --- Core / Satellite sleeves ---
+    core_weight: float = 0.80
+    sat_weight: float = 0.20
+    crypto_symbols: tuple[str, ...] = ("BTC", "ETH")

@@ -79,7 +79,7 @@ def main():
         df = _flatten_columns(df)
 
         # Standardize exactly to Date + OHLC (single header row)
-        out = df[["Open", "High", "Low", "Close"]].copy()
+        out = df[["Open", "High", "Low", "Close", "Volume"]].copy()
         out.index.name = "Date"
 
         path = os.path.join(OUT_DIR, f"{sym}.csv")

@@ -12,6 +12,7 @@ from .universe import load_crypto_monthly_schedule, symbols_for_date
 from .strategy import build_signals
 
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
+CORE_UNIVERSE_PATH = "data/universe/core_monthly.csv"
 CORE_TOP_N = 3
 
 
@@ -128,7 +129,13 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             return set(sat_syms)
         return set(symbols_for_date(dt, sched)).intersection(set(sat_syms))
 
-    core_allowed = _core_allowed_builder(panel, core_syms, cfg)
+    core_sched = None
+    if os.path.exists(CORE_UNIVERSE_PATH):
+        core_sched = load_crypto_monthly_schedule(CORE_UNIVERSE_PATH)  # même loader: month/symbols
+    def core_allowed(dt: pd.Timestamp) -> set:
+        if core_sched is None:
+            return _core_allowed_builder(panel, core_syms, cfg)(dt)  # fallback ancien
+        return set(symbols_for_date(dt, core_sched)).intersection(set(core_syms))
 
     eq_core = tr_core = None
     if core_syms:

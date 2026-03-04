@@ -1,4 +1,8 @@
-import os, json, argparse
+import os
+import json
+import argparse
+import dataclasses
+
 from src.config import Config
 from src.data_panel import load_panel
 from src.sleeves import run_backtest_core_satellite
@@ -11,22 +15,32 @@ def parse_args():
     p.add_argument("--symbols", type=str, default="BTC,ETH")  # comma list
     p.add_argument("--start", type=str, default=None)         # YYYY-MM-DD
     p.add_argument("--end", type=str, default=None)           # YYYY-MM-DD
+
+    # Optional overrides (for controlled experiments)
+    p.add_argument("--risk_per_trade", type=float, default=None)  # e.g. 0.01
+
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+
     cfg = Config()
+    if args.risk_per_trade is not None:
+        # Config is frozen -> must create a new instance
+        cfg = dataclasses.replace(cfg, risk_per_trade=float(args.risk_per_trade))
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     sym_to_path = {s: f"data/raw/{s}.csv" for s in symbols}
 
     panel = load_panel(sym_to_path, start_date=args.start, end_date=args.end)
+    if not panel:
+        raise RuntimeError("Panel is empty after loading/filtering. Check data/raw/*.csv and date window.")
 
     eq_df, tr_df, eq_core, eq_sat = run_backtest_core_satellite(
         panel=panel,
         cfg=cfg,
-        symbols=symbols,
+        symbols=list(panel.keys()),
     )
 
     out_dir = f"data/outputs/{args.tag}"
@@ -43,12 +57,12 @@ def main():
 
     summary = summarize(eq_df, tr_df)
 
-    if "sleeve" in tr_df.columns and len(tr_df) > 0:
+    if tr_df is not None and "sleeve" in tr_df.columns and len(tr_df) > 0:
         summary["TradesBySleeve"] = tr_df["sleeve"].value_counts().to_dict()
     else:
         summary["TradesBySleeve"] = {"core": 0, "sat": 0}
 
-    payload = {"tag": args.tag, "symbols": symbols, "summary": summary}
+    payload = {"tag": args.tag, "symbols": list(panel.keys()), "summary": summary}
     print(json.dumps(payload, indent=2))
 
 

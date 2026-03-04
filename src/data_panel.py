@@ -54,9 +54,12 @@ def load_symbol_csv(path: str, start_date: Optional[str] = None, end_date: Optio
     return out
 
 
-def load_panel(symbol_to_path: Dict[str, str], start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, pd.DataFrame]:
-    """
-    Load a dict of symbol->csv_path into symbol->OHLC DataFrames,
-    optionally filtered to [start_date, end_date].
-    """
-    return {sym: load_symbol_csv(p, start_date=start_date, end_date=end_date) for sym, p in symbol_to_path.items()}
+def load_panel(symbol_to_path, start_date=None, end_date=None):
+    panel = {}
+    for sym, p in symbol_to_path.items():
+        df = load_symbol_csv(p, start_date=start_date, end_date=end_date)
+        if df is None or df.empty:
+            print(f"[warn] {sym}: no rows in date window (skipped)")
+            continue
+        panel[sym] = df
+    return panel

@@ -229,6 +229,20 @@ def run_backtest_multi_mvp(
             if has_bar(sym, dt):
                 last_close[sym] = float(sym_data[sym].loc[dt, "close"])
 
+        # ATR trailing stop update
+        for sym, pos in pf.positions.items():
+            if not has_bar(sym, dt):
+                continue
+
+            row = sym_data[sym].loc[dt]
+            atr = float(row["atr"])
+            close = float(row["close"])
+
+            new_stop = close - stop_atr_mult * atr
+
+            if new_stop > pos.stop_price:
+                pos.stop_price = new_stop
+
         marks_close = {sym: float(last_close[sym]) for sym in sym_data.keys()}
         eq_close = float(pf.equity(marks_close))
 

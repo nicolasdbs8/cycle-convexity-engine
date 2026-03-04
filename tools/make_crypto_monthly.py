@@ -17,14 +17,24 @@ class SymSeries:
 
 def _read_ohlcv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
+
+    # normalize column names
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    # accept date or timestamp
     if "date" not in df.columns:
-        raise ValueError(f"{path}: missing 'date' column")
+        if "timestamp" in df.columns:
+            df.rename(columns={"timestamp": "date"}, inplace=True)
+        else:
+            raise ValueError(f"{path}: missing date column")
+
     for col in ["open", "high", "low", "close"]:
         if col not in df.columns:
             raise ValueError(f"{path}: missing '{col}' column")
-    # volume is optional but required for liquidity filter (otherwise symbol will be skipped)
+
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").drop_duplicates("date").set_index("date")
+
     return df
 
 

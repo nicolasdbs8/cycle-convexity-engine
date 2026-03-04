@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple, Callable
 from .backtest_multi import run_backtest_multi_mvp
 from .config import Config
 from .universe import load_crypto_monthly_schedule, symbols_for_date
+from .strategy import build_signals
 
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
 
@@ -26,26 +27,27 @@ def _subset_panel(panel: Dict[str, pd.DataFrame], symbols: List[str]):
     return {s: panel[s] for s in symbols if s in panel}
 
 
-def _core_allowed_builder(panel, core_syms):
+def _core_allowed_builder(panel, core_syms, cfg):
 
-    # union calendar
-    idx = None
+    # build signals so 'mom' exists
+    sig_panel = {}
+
     for s in core_syms:
-        if s in panel:
-            idx = panel[s].index if idx is None else idx.union(panel[s].index)
+        if s not in panel:
+            continue
 
-    idx = idx.sort_values()
+        sig_panel[s] = build_signals(
+            panel[s],
+            cfg.breakout_days,
+            cfg.mom_days,
+            cfg.atr_days
+        )
 
     def allowed(dt):
 
         moms = []
 
-        for s in core_syms:
-
-            if s not in panel:
-                continue
-
-            df = panel[s]
+        for s, df in sig_panel.items():
 
             if dt not in df.index:
                 continue
@@ -105,7 +107,7 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
         return set(symbols_for_date(dt, sched)).intersection(set(sat_syms))
 
     # ---- core ranking filter
-    core_allowed = _core_allowed_builder(panel, core_syms)
+    core_allowed = _core_allowed_builder(panel, core_syms, cfg)
 
     # ---- run sleeves
     eq_core = tr_core = None

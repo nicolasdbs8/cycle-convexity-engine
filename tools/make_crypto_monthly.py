@@ -76,7 +76,11 @@ def _liquidity_ok_asof(
     Dollar-volume proxy: close * volume.
     Uses median over last window_bars ending at asof (inclusive).
     Anti-lookahead: only uses data <= asof.
+    If min_median_dvol_usd == 0, liquidity filter is disabled (always True).
     """
+    if min_median_dvol_usd == 0:
+        return True
+
     if "volume" not in df.columns:
         return False
 
@@ -84,7 +88,6 @@ def _liquidity_ok_asof(
     if len(sub) < window_bars:
         return False
 
-    # Take last window_bars
     tail = sub.iloc[-window_bars:]
     vol = pd.to_numeric(tail["volume"], errors="coerce")
     close = pd.to_numeric(tail["close"], errors="coerce")
@@ -121,11 +124,10 @@ def build_crypto_monthly_schedule(
         scores: List[Tuple[str, float]] = []
 
         for s in series:
-            asof = _last_date_before(s.df, m)  # end of previous month (or last trading day before m)
+            asof = _last_date_before(s.df, m)  # end of previous month
             if asof is None:
                 continue
 
-            # Liquidity gate (skip illiquid)
             if not _liquidity_ok_asof(s.df, asof, liq_window_bars, min_median_dvol_usd):
                 continue
 
@@ -135,7 +137,6 @@ def build_crypto_monthly_schedule(
 
             scores.append((s.sym, mom))
 
-        # forward-fill if no valid scores
         if len(scores) == 0:
             picked = last_symbols
         else:
@@ -155,9 +156,8 @@ def parse_args():
     p.add_argument("--n", type=int, default=3)
     p.add_argument("--mom_bars", type=int, default=180)
 
-    # Liquidity filter
     p.add_argument("--liq_window_bars", type=int, default=30)
-    p.add_argument("--min_dvol_usd", type=float, default=10_000_000.0)
+    p.add_argument("--min_dvol_usd", type=float, default=10_000_000.0)  # set to 0 to disable
 
     p.add_argument("--out", type=str, default="data/universe/crypto_monthly.csv")
     return p.parse_args()
@@ -173,8 +173,8 @@ def main():
         raise ValueError("--mom_bars must be > 0")
     if args.liq_window_bars <= 0:
         raise ValueError("--liq_window_bars must be > 0")
-    if args.min_dvol_usd <= 0:
-        raise ValueError("--min_dvol_usd must be > 0")
+    if args.min_dvol_usd < 0:
+        raise ValueError("--min_dvol_usd must be >= 0 (use 0 to disable liquidity filter)")
 
     series: List[SymSeries] = []
     missing = []
@@ -196,7 +196,10 @@ def main():
     if missing:
         print("[warn] missing CSVs for:", ",".join(missing))
     if no_volume:
-        print("[warn] CSVs missing 'volume' (will fail liquidity gate):", ",".join(no_volume))
+        if args.min_dvol_usd > 0:
+            print("[warn] CSVs missing 'volume' (will fail liquidity gate):", ",".join(no_volume))
+        else:
+            print("[warn] CSVs missing 'volume' (liquidity filter disabled):", ",".join(no_volume))
 
     out_df = build_crypto_monthly_schedule(
         series=series,

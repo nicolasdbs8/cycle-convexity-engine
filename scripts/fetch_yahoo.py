@@ -3,13 +3,35 @@ import yfinance as yf
 import pandas as pd
 
 SYMBOLS = {
+    # --- Crypto (start with 9; add TON later once ticker confirmed) ---
     "BTC": "BTC-USD",
     "ETH": "ETH-USD",
+    "BNB": "BNB-USD",
+    "SOL": "SOL-USD",
+    "XRP": "XRP-USD",
+    "ADA": "ADA-USD",
+    "DOGE": "DOGE-USD",
+    "TRX": "TRX-USD",
+    "LINK": "LINK-USD",
+    # "TON": "TON11419-USD",  # add later after confirming on Yahoo
+
+    # --- Core ETFs (14) ---
     "SPY": "SPY",
     "QQQ": "QQQ",
-    "GLD": "GLD",
+    "IWM": "IWM",
+    "EFA": "EFA",
+    "EEM": "EEM",
+
     "TLT": "TLT",
+    "IEF": "IEF",
+    "SHY": "SHY",
+    "LQD": "LQD",
+    "HYG": "HYG",
+
+    "GLD": "GLD",
+    "SLV": "SLV",
     "USO": "USO",
+    "UNG": "UNG",
 }
 
 OUT_DIR = "data/raw"

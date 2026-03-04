@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from .backtest_multi import run_backtest_multi_mvp
 from .config import Config
-from .universe import load_crypto_monthly_schedule, symbols_for_date
 from .strategy import build_signals
+from .universe import load_crypto_monthly_schedule, symbols_for_date
 
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
 CORE_TOP_N = 3
@@ -61,12 +61,27 @@ def _sum_equity(
     return out
 
 
-def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], set]:
+def _core_allowed_builder(
+    panel: Dict[str, pd.DataFrame],
+    core_syms: List[str],
+    cfg: Config,
+) -> Callable[[pd.Timestamp], set]:
+    """
+    Select core top-N by momentum each day (anti-lookahead by using signals at dt).
+    """
     sig_panel: Dict[str, pd.DataFrame] = {}
+    exit_ll_days = int(getattr(cfg, "exit_ll_days", 50))
+
     for s in core_syms:
         if s not in panel:
             continue
-        sig_panel[s] = build_signals(panel[s], cfg.breakout_days, cfg.mom_days, cfg.atr_days)
+        sig_panel[s] = build_signals(
+            panel[s],
+            cfg.breakout_days,
+            cfg.mom_days,
+            cfg.atr_days,
+            exit_ll_days=exit_ll_days,
+        )
 
     def allowed(dt: pd.Timestamp) -> set:
         moms = []
@@ -93,11 +108,16 @@ def _run(
     allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
     vol_target_annual: Optional[float] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Runs one sleeve as an independent portfolio with its own capital allocation.
+    IMPORTANT: risk_cap_total remains a FRACTION of sleeve equity (not scaled by weight),
+    so risk budget naturally scales with allocated capital.
+    """
     return run_backtest_multi_mvp(
         panel=panel,
         fee_rate=cfg.fee_rate,
         slippage_rate=cfg.slippage_rate,
-        initial_capital=cfg.initial_capital * float(capital_weight),
+        initial_capital=float(cfg.initial_capital) * float(capital_weight),
         risk_per_trade=cfg.risk_per_trade,
         risk_cap_total=cfg.risk_cap_total,
         max_positions=cfg.max_positions,
@@ -117,6 +137,13 @@ def _run(
 
 
 def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, symbols: List[str]):
+    """
+    Runs:
+      - core sleeve (top-N core by momentum)
+      - satellite sleeve (crypto schedule monthly if available)
+    Then returns:
+      eq_total, tr_total, eq_core, eq_sat
+    """
     core_syms, sat_syms = _split_symbols(symbols, cfg.crypto_symbols)
 
     sched = None
@@ -169,18 +196,5 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
     if tr_sat is not None and not tr_sat.empty:
         trades.append(tr_sat)
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
-
-    ret = eq_total["equity"].pct_change()
-
-    vol = ret.rolling(30).std() * np.sqrt(252)
-
-    target = 0.12
-
-    scaler = target / vol
-    scaler = scaler.clip(0.5, 1.5)
-
-    ret_adj = ret * scaler.shift(1)
-
-    eq_total["equity"] = (1 + ret_adj.fillna(0)).cumprod() * eq_total["equity"].iloc[0]
 
     return eq_total, tr_total, eq_core, eq_sat

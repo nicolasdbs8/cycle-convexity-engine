@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from typing import Dict, List, Tuple
 
@@ -31,6 +32,43 @@ def run_backtest_multi_mvp(
         reg = compute_weekly_regime(df2, regime_ma_weeks, regime_slope_weeks, use_slope=regime_use_slope)
         sym_data[sym] = df2
         sym_regime[sym] = reg
+
+    # --- DEBUG STATS (safe, no behavior change) ---
+    stats = {}
+    for sym in sym_data.keys():
+        d = sym_data[sym]
+        r = sym_regime[sym].astype(bool)
+
+        hh_ok = int(d["hh_prev"].notna().sum()) if "hh_prev" in d.columns else 0
+        mom_ok = int(d["mom"].notna().sum()) if "mom" in d.columns else 0
+        atr_ok = int(d["atr"].notna().sum()) if "atr" in d.columns else 0
+        reg_true = int(r.sum())
+
+        cond_ok = 0
+        if all(c in d.columns for c in ["close", "hh_prev", "mom", "atr"]):
+            c = (
+                r
+                & d["hh_prev"].notna()
+                & d["mom"].notna()
+                & d["atr"].notna()
+                & (d["close"] > d["hh_prev"])
+                & (d["mom"] > 0.0)
+            )
+            cond_ok = int(c.sum())
+
+        stats[sym] = {
+            "rows": int(len(d)),
+            "start": str(d.index.min().date()) if len(d) else None,
+            "end": str(d.index.max().date()) if len(d) else None,
+            "hh_prev_notna": hh_ok,
+            "mom_notna": mom_ok,
+            "atr_notna": atr_ok,
+            "regime_true_days": reg_true,
+            "signal_cond_days": cond_ok,
+        }
+
+    print("[debug] per_symbol_stats=" + json.dumps(stats))
+    # --- END DEBUG STATS ---
 
     # Common trading calendar: intersection to avoid missing bars
     common_idx = None

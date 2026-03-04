@@ -152,6 +152,7 @@ def run_backtest_multi_mvp(
             # risk sizing
             marks = {s: float(sym_data[s].loc[dt, "open"]) for s in sym_data.keys()}
             eq_open = pf.equity(marks)
+            print("[debug] entry_try", sym, "dt", str(dt.date()), "eq_open", eq_open, "cash", pf.cash)
             risk_cash = eq_open * risk_per_trade
             per_unit_risk = max(exec_px - stop_price, 1e-12)
             qty = risk_cash / per_unit_risk

@@ -7,7 +7,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      TAG: robust_b150_s2_5_ma52_all_risk_2
+      TAG: robust_b150_s2_5_ma52_all_risk_2_debug_sat_only
 
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
 
       - name: Run multi MVP
         run: |
-          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols BTC,ETH,SPY,QQQ,GLD,TLT,USO
+          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols BTC,ETH
 
       - name: Upload outputs
         uses: actions/upload-artifact@v4

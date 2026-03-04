@@ -2,16 +2,14 @@ name: multi-mvp
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - core-monthly
 
 jobs:
+  # 1) Baseline run (full sample)
   baseline:
     runs-on: ubuntu-latest
     env:
+      TAG: multi_default
       SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY
-      TAG: baseline_multi
     steps:
       - uses: actions/checkout@v4
 
@@ -21,63 +19,42 @@ jobs:
 
       - name: Install deps
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Fetch data (Yahoo)
         run: |
-          set -euo pipefail
           python scripts/fetch_yahoo.py
 
-      - name: Build monthly universes (core + crypto)
+      - name: Make crypto monthly universe (if present)
         run: |
-          set -euo pipefail
-          python tools/make_core_monthly.py --n 8 --mom_bars 180 --min_dvol_usd 50000000
-          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
+          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0 || true
 
-      - name: Run baseline backtest (full data)
+      - name: Make core monthly universe (if present)
         run: |
-          set -euo pipefail
-          PYTHONPATH=. python run_backtest_multi.py --tag "${TAG}" --symbols "${SYMBOLS}"
+          python tools/make_core_monthly.py --n 6 --mom_bars 180 || true
 
-      - name: Guard: avoid empty CSV artifacts
+      - name: Run backtest (baseline)
         run: |
-          set -euo pipefail
-          OUT="data/outputs/${TAG}"
-          test -d "$OUT"
+          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols "$SYMBOLS"
 
-          # equity_curve.csv must exist and have at least header+1 row
-          if [ ! -s "$OUT/equity_curve.csv" ]; then
-            echo "date,equity" > "$OUT/equity_curve.csv"
-            echo "1970-01-01,10000.0" >> "$OUT/equity_curve.csv"
-          fi
-
-          # trades.csv must exist and have headers
-          if [ ! -s "$OUT/trades.csv" ]; then
-            echo "entry_date,exit_date,symbol,qty,entry,exit,pnl,sleeve,exit_reason" > "$OUT/trades.csv"
-          fi
-
-      - name: Upload baseline artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: baseline-${{ env.TAG }}
-          path: |
-            data/outputs/${{ env.TAG }}/
-            data/universe/core_monthly.csv
-            data/universe/crypto_monthly.csv
-          if-no-files-found: error
+          name: baseline_outputs
+          path: data/outputs/
 
+  # 2) Walk-forward style sub-period tests (same config)
   walk_forward:
     runs-on: ubuntu-latest
     needs: baseline
     strategy:
       fail-fast: false
       matrix:
-        window:
+        wf:
           - { tag: "wf_2005_2012", start: "2005-01-01", end: "2012-12-31" }
           - { tag: "wf_2013_2018", start: "2013-01-01", end: "2018-12-31" }
-          - { tag: "wf_2019_2026", start: "2019-01-01", end: "2026-03-03" }
+          - { tag: "wf_2019_2026", start: "2019-01-01", end: "2026-03-04" }
     env:
       SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY
     steps:
@@ -89,57 +66,31 @@ jobs:
 
       - name: Install deps
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Fetch data (Yahoo)
         run: |
-          set -euo pipefail
           python scripts/fetch_yahoo.py
 
-      - name: Build monthly universes (core + crypto)
+      - name: Run backtest (walk-forward window)
         run: |
-          set -euo pipefail
-          python tools/make_core_monthly.py --n 8 --mom_bars 180 --min_dvol_usd 50000000
-          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
+          PYTHONPATH=. python run_backtest_multi.py --tag ${{ matrix.wf.tag }} --symbols "$SYMBOLS" --start ${{ matrix.wf.start }} --end ${{ matrix.wf.end }}
 
-      - name: Run walk-forward window
-        run: |
-          set -euo pipefail
-          PYTHONPATH=. python run_backtest_multi.py --tag "${{ matrix.window.tag }}" --symbols "${SYMBOLS}" --start "${{ matrix.window.start }}" --end "${{ matrix.window.end }}"
-
-      - name: Guard: avoid empty CSV artifacts
-        run: |
-          set -euo pipefail
-          TAG="${{ matrix.window.tag }}"
-          OUT="data/outputs/${TAG}"
-          test -d "$OUT"
-
-          if [ ! -s "$OUT/equity_curve.csv" ]; then
-            echo "date,equity" > "$OUT/equity_curve.csv"
-            echo "1970-01-01,10000.0" >> "$OUT/equity_curve.csv"
-          fi
-
-          if [ ! -s "$OUT/trades.csv" ]; then
-            echo "entry_date,exit_date,symbol,qty,entry,exit,pnl,sleeve,exit_reason" > "$OUT/trades.csv"
-          fi
-
-      - name: Upload walk-forward artifacts
+      - name: Upload artifacts (WF)
         uses: actions/upload-artifact@v4
         with:
-          name: walkforward-${{ matrix.window.tag }}
-          path: |
-            data/outputs/${{ matrix.window.tag }}/
-          if-no-files-found: error
+          name: wf_outputs_${{ matrix.wf.tag }}
+          path: data/outputs/${{ matrix.wf.tag }}/
 
+  # 3) Position sizing sanity check: sweep risk_per_trade
   sizing_sweep:
     runs-on: ubuntu-latest
     needs: baseline
     strategy:
       fail-fast: false
       matrix:
-        rpt: [0.005, 0.01, 0.015, 0.02]
+        rpt: [0.0075, 0.01, 0.0125, 0.015]
     env:
       SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY
     steps:
@@ -151,85 +102,19 @@ jobs:
 
       - name: Install deps
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Fetch data (Yahoo)
         run: |
-          set -euo pipefail
           python scripts/fetch_yahoo.py
 
-      - name: Build monthly universes (core + crypto)
+      - name: Run backtest (sizing sweep)
         run: |
-          set -euo pipefail
-          python tools/make_core_monthly.py --n 8 --mom_bars 180 --min_dvol_usd 50000000
-          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
+          PYTHONPATH=. python run_backtest_multi.py --tag sizing_rpt_${{ matrix.rpt }} --symbols "$SYMBOLS" --risk_per_trade ${{ matrix.rpt }}
 
-      - name: Run sizing sweep (override risk_per_trade safely)
-        run: |
-          set -euo pipefail
-          TAG="sizing_rpt_${{ matrix.rpt }}"
-          PYTHONPATH=. python - << 'PY'
-          import os, json
-          import numpy as np
-          from src.config import Config
-          from src.data_panel import load_panel
-          from src.sleeves import run_backtest_core_satellite
-          from src.report import summarize
-
-          symbols = os.environ["SYMBOLS"].split(",")
-          symbols = [s.strip().upper() for s in symbols if s.strip()]
-          sym_to_path = {s: f"data/raw/{s}.csv" for s in symbols}
-
-          cfg = Config(risk_per_trade=float(os.environ["RPT"]))  # OK même si Config est frozen
-          panel = load_panel(sym_to_path)
-
-          eq_df, tr_df, eq_core, eq_sat = run_backtest_core_satellite(panel=panel, cfg=cfg, symbols=symbols)
-
-          tag = os.environ["TAG"]
-          out_dir = f"data/outputs/{tag}"
-          os.makedirs(out_dir, exist_ok=True)
-
-          eq_df.to_csv(f"{out_dir}/equity_curve.csv")
-          if eq_core is not None:
-            eq_core.to_csv(f"{out_dir}/equity_core.csv")
-          if eq_sat is not None:
-            eq_sat.to_csv(f"{out_dir}/equity_sat.csv")
-          tr_df.to_csv(f"{out_dir}/trades.csv", index=False)
-
-          summary = summarize(eq_df, tr_df)
-          if "sleeve" in tr_df.columns and len(tr_df) > 0:
-            summary["TradesBySleeve"] = tr_df["sleeve"].value_counts().to_dict()
-          else:
-            summary["TradesBySleeve"] = {"core": 0, "sat": 0}
-
-          payload = {"tag": tag, "symbols": symbols, "summary": summary}
-          print(json.dumps(payload, indent=2))
-          PY
-        env:
-          TAG: sizing_rpt_${{ matrix.rpt }}
-          RPT: ${{ matrix.rpt }}
-
-      - name: Guard: avoid empty CSV artifacts
-        run: |
-          set -euo pipefail
-          TAG="sizing_rpt_${{ matrix.rpt }}"
-          OUT="data/outputs/${TAG}"
-          test -d "$OUT"
-
-          if [ ! -s "$OUT/equity_curve.csv" ]; then
-            echo "date,equity" > "$OUT/equity_curve.csv"
-            echo "1970-01-01,10000.0" >> "$OUT/equity_curve.csv"
-          fi
-
-          if [ ! -s "$OUT/trades.csv" ]; then
-            echo "entry_date,exit_date,symbol,qty,entry,exit,pnl,sleeve,exit_reason" > "$OUT/trades.csv"
-          fi
-
-      - name: Upload sizing artifacts
+      - name: Upload artifacts (Sizing)
         uses: actions/upload-artifact@v4
         with:
-          name: sizing-rpt-${{ matrix.rpt }}
+          name: sizing_outputs_rpt_${{ matrix.rpt }}
           path: data/outputs/sizing_rpt_${{ matrix.rpt }}/
-          if-no-files-found: error

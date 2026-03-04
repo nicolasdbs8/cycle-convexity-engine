@@ -1,7 +1,7 @@
 import argparse
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import pandas as pd
 
@@ -22,15 +22,13 @@ def _read_ohlcv(path: str) -> pd.DataFrame:
     for col in ["open", "high", "low", "close"]:
         if col not in df.columns:
             raise ValueError(f"{path}: missing '{col}' column")
-
+    # volume is optional but required for liquidity filter (otherwise symbol will be skipped)
     df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date").drop_duplicates("date")
-    df = df.set_index("date")
+    df = df.sort_values("date").drop_duplicates("date").set_index("date")
     return df
 
 
 def _last_date_before(df: pd.DataFrame, dt: pd.Timestamp) -> pd.Timestamp | None:
-    # last index strictly < dt
     idx = df.index[df.index < dt]
     if len(idx) == 0:
         return None
@@ -38,7 +36,6 @@ def _last_date_before(df: pd.DataFrame, dt: pd.Timestamp) -> pd.Timestamp | None
 
 
 def _momentum_asof(df: pd.DataFrame, asof: pd.Timestamp, lookback_bars: int) -> float | None:
-    # use trading bars, not calendar days
     sub = df.loc[:asof]
     if len(sub) <= lookback_bars:
         return None
@@ -49,8 +46,37 @@ def _momentum_asof(df: pd.DataFrame, asof: pd.Timestamp, lookback_bars: int) -> 
     return (close_now / close_then) - 1.0
 
 
+def _liquidity_ok_asof(
+    df: pd.DataFrame,
+    asof: pd.Timestamp,
+    window_bars: int,
+    min_median_dvol_usd: float,
+) -> bool:
+    """
+    Dollar-volume proxy: close * volume.
+    Uses median over last window_bars ending at asof (inclusive).
+    Anti-lookahead: only uses data <= asof.
+    """
+    if "volume" not in df.columns:
+        return False
+
+    sub = df.loc[:asof]
+    if len(sub) < window_bars:
+        return False
+
+    # Take last window_bars
+    tail = sub.iloc[-window_bars:]
+    vol = pd.to_numeric(tail["volume"], errors="coerce")
+    close = pd.to_numeric(tail["close"], errors="coerce")
+    dvol = close * vol
+
+    med = float(dvol.median(skipna=True)) if dvol.notna().any() else float("nan")
+    if not (med == med):  # NaN check
+        return False
+    return med >= float(min_median_dvol_usd)
+
+
 def _month_starts(min_dt: pd.Timestamp, max_dt: pd.Timestamp) -> List[pd.Timestamp]:
-    # month starts between min_dt and max_dt inclusive
     start = min_dt.to_period("M").to_timestamp()
     end = max_dt.to_period("M").to_timestamp()
     months = pd.date_range(start=start, end=end, freq="MS")
@@ -61,8 +87,9 @@ def build_crypto_monthly_schedule(
     series: List[SymSeries],
     n: int,
     mom_bars: int,
+    liq_window_bars: int,
+    min_median_dvol_usd: float,
 ) -> pd.DataFrame:
-    # determine global month range
     min_dt = min(s.df.index.min() for s in series)
     max_dt = max(s.df.index.max() for s in series)
     months = _month_starts(min_dt, max_dt)
@@ -71,19 +98,24 @@ def build_crypto_monthly_schedule(
     last_symbols: List[str] = []
 
     for m in months:
-        # anti-lookahead: selection for month m uses info up to end of (m-1)
         scores: List[Tuple[str, float]] = []
 
         for s in series:
-            asof = _last_date_before(s.df, m)
+            asof = _last_date_before(s.df, m)  # end of previous month (or last trading day before m)
             if asof is None:
                 continue
+
+            # Liquidity gate (skip illiquid)
+            if not _liquidity_ok_asof(s.df, asof, liq_window_bars, min_median_dvol_usd):
+                continue
+
             mom = _momentum_asof(s.df, asof, mom_bars)
             if mom is None:
                 continue
+
             scores.append((s.sym, mom))
 
-        # if not enough data, forward-fill last known (or empty)
+        # forward-fill if no valid scores
         if len(scores) == 0:
             picked = last_symbols
         else:
@@ -102,6 +134,11 @@ def parse_args():
     p.add_argument("--candidates", type=str, default=",".join(DEFAULT_CANDIDATES))
     p.add_argument("--n", type=int, default=3)
     p.add_argument("--mom_bars", type=int, default=180)
+
+    # Liquidity filter
+    p.add_argument("--liq_window_bars", type=int, default=30)
+    p.add_argument("--min_dvol_usd", type=float, default=10_000_000.0)
+
     p.add_argument("--out", type=str, default="data/universe/crypto_monthly.csv")
     return p.parse_args()
 
@@ -114,9 +151,14 @@ def main():
         raise ValueError("--n must be > 0")
     if args.mom_bars <= 0:
         raise ValueError("--mom_bars must be > 0")
+    if args.liq_window_bars <= 0:
+        raise ValueError("--liq_window_bars must be > 0")
+    if args.min_dvol_usd <= 0:
+        raise ValueError("--min_dvol_usd must be > 0")
 
     series: List[SymSeries] = []
     missing = []
+    no_volume = []
 
     for sym in cands:
         path = os.path.join(args.raw_dir, f"{sym}.csv")
@@ -124,6 +166,8 @@ def main():
             missing.append(sym)
             continue
         df = _read_ohlcv(path)
+        if "volume" not in df.columns:
+            no_volume.append(sym)
         series.append(SymSeries(sym=sym, df=df))
 
     if len(series) == 0:
@@ -131,8 +175,16 @@ def main():
 
     if missing:
         print("[warn] missing CSVs for:", ",".join(missing))
+    if no_volume:
+        print("[warn] CSVs missing 'volume' (will fail liquidity gate):", ",".join(no_volume))
 
-    out_df = build_crypto_monthly_schedule(series, n=args.n, mom_bars=args.mom_bars)
+    out_df = build_crypto_monthly_schedule(
+        series=series,
+        n=args.n,
+        mom_bars=args.mom_bars,
+        liq_window_bars=args.liq_window_bars,
+        min_median_dvol_usd=args.min_dvol_usd,
+    )
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     out_df.to_csv(args.out, index=False)

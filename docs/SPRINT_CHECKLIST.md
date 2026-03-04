@@ -1,92 +1,79 @@
 # SPRINT_CHECKLIST.md
 
-Projet: cycle-convexity-engine
+Projet : cycle-convexity-engine
 
-Checklist opérationnelle (anti-dérive).
-
-Objectif : progression vérifiable.
-
----
-
-# État actuel
-
-Implémenté :
-
-- backtest multi-actifs
-- architecture core / satellite
-- univers crypto dynamique mensuel
-- CI GitHub Actions
-- génération d’artefacts
+Checklist opérationnelle.
 
 ---
 
 # Baseline actuelle
 
-Paramètres :
-
-
-breakout = 150
-stop = 2.5 ATR
-regime = MA52
-max_positions = 3
-risk_cap_total = 0.06
-
+breakout = 150  
+stop = 2.5 ATR  
+regime = MA52  
+max_positions = 3  
+risk_cap_total = 0.06  
 
 Allocation :
 
-
-core = 90 %
+core = 90 %  
 sat = 10 %
 
+---
+
+# Sprints terminés
+
+Sprint 1 — Backtester multi-actifs  
+Sprint 2 — Filtre de régime  
+Sprint 3 — Validation robustesse  
+Sprint 4 — Architecture core / satellite  
+Sprint 5 — Univers crypto dynamique  
 
 ---
 
 # Sprint actuel
 
-Objectif :
-
-stabilisation du moteur.
+Stabilisation du moteur.
 
 ---
 
-# Sprint 4 — Core / Satellite
+# Sprint suivant
 
-Status : ✅ implémenté
-
-- sleeves core / satellite
-- aggregation equity
-- trades taggés par sleeve
-
----
-
-# Sprint 5 — Univers crypto dynamique
-
-Status : ✅ implémenté
-
-- univers mensuel
-- anti-lookahead
-- pipeline reproductible
-
----
-
-# Sprint 6 — Volatility targeting portefeuille
+### Sprint 6 — Position sizing volatilité actif
 
 Objectif :
 
-réduire les drawdowns.
+équilibrer le risque entre actifs.
 
-Implémentation prévue :
+Implémentation :
 
-
-target_vol ≈ 12 %
-rolling window ≈ 30 jours
-
-
-Scaling exposition portefeuille.
+position_size ∝ 1 / ATR
 
 ---
 
-# Sprint 7 — Diversification
+### Sprint 7 — Exit amélioré
+
+Objectif :
+
+améliorer capture de tendance.
+
+Pistes :
+
+ATR trailing  
+ou  
+stop Donchian
+
+---
+
+### Sprint 8 — Volatility targeting portefeuille
+
+Objectif :
+
+stabiliser la volatilité du portefeuille.
+
+---
+
+### Sprint 9 — Diversification core
 
 Objectif :
 
@@ -94,47 +81,18 @@ augmenter le nombre de trades.
 
 Pistes :
 
-- nouveaux ETF core
+- nouveaux ETF
 - futures proxies
 - secteurs equity
 
 ---
 
-# Sprint 8 — Signals additionnels
+### Sprint 10 — Execution layer
 
 Objectif :
 
-réduire la dépendance aux tendances rares.
+paper trading.
 
-Possibilité :
-
-
-Donchian 100
-+
-Donchian 150
-
-
----
-
-# Sprint 9 — Execution layer
-
-Objectif :
-
-production d’ordres paper trading.
-
-Scripts :
-
+Script :
 
 make_orders.py
-
-
----
-
-# Règle de gouvernance
-
-Aucune optimisation sans :
-
-- sensibilité paramètres
-- sous-périodes
-- Monte Carlo
-- justification écrite.

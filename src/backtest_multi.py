@@ -1,6 +1,6 @@
 import json
 import pandas as pd
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Callable, Optional
 
 from .portfolio_multi import PortfolioMulti
 from .backtest import apply_costs
@@ -23,6 +23,7 @@ def run_backtest_multi_mvp(
     regime_ma_weeks: int,
     regime_slope_weeks: int,
     regime_use_slope: bool,
+    allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
     # Build signals+regime per symbol
@@ -86,17 +87,25 @@ def run_backtest_multi_mvp(
     equity_curve: List[dict] = []
     trades: List[dict] = []
 
-    # pending orders keyed by symbol
-    pending_entry = {}   # sym -> dict(signal_date, atr_at_signal)
-    pending_exit = set() # symbols to exit next open
+    pending_entry = {}        # sym -> dict(signal_date, atr)
+    pending_exit_reason = {}  # sym -> reason string (exit next open)
 
     for i, dt in enumerate(common_idx):
+        allowed = allowed_symbols_fn(dt) if allowed_symbols_fn is not None else None
+
         # marks at close for equity curve
         marks_close = {sym: float(sym_data[sym].loc[dt, "close"]) for sym in sym_data.keys()}
         eq_now = pf.equity(marks_close)
 
+        # If universe says a held symbol is no longer allowed, exit next open
+        if allowed is not None:
+            for sym in list(pf.positions.keys()):
+                if sym not in allowed and sym not in pending_exit_reason:
+                    pending_exit_reason[sym] = "universe_exit"
+
         # 1) execute exits at open
-        for sym in list(pending_exit):
+        for sym in list(pending_exit_reason.keys()):
+            reason = pending_exit_reason.get(sym, "exit")
             if pf.has(sym):
                 o = float(sym_data[sym].loc[dt, "open"])
                 exec_px = apply_costs(o, fee_rate, slippage_rate, "sell")
@@ -112,11 +121,11 @@ def run_backtest_multi_mvp(
                     "exit_date": dt,
                     "exit_price": exec_px,
                     "exit_fee": fee,
-                    "exit_reason": "regime_off",
+                    "exit_reason": reason,
                     "qty": pos.qty,
                     "stop_price": pos.stop_price,
                 })
-            pending_exit.discard(sym)
+            pending_exit_reason.pop(sym, None)
 
         # 2) stop intraday
         for sym in list(pf.positions.keys()):
@@ -140,10 +149,15 @@ def run_backtest_multi_mvp(
                     "qty": pos.qty,
                     "stop_price": pos.stop_price,
                 })
-                pending_exit.discard(sym)
+                pending_exit_reason.pop(sym, None)
 
         # 3) execute entries at open (if signaled prev day)
         for sym, pe in list(pending_entry.items()):
+            # universe check on execution day too
+            if allowed is not None and sym not in allowed:
+                pending_entry.pop(sym, None)
+                continue
+
             if pf.has(sym):
                 pending_entry.pop(sym, None)
                 continue
@@ -163,8 +177,6 @@ def run_backtest_multi_mvp(
             qty = risk_cash / per_unit_risk
 
             # --- CASH CAP (NO LEVERAGE) ---
-            # Total cost = qty*exec_px + fee, fee = (qty*exec_px)*fee_rate
-            # => total = qty*exec_px*(1+fee_rate) must be <= pf.cash
             max_qty_cash = pf.cash / (exec_px * (1.0 + fee_rate))
             if qty > max_qty_cash:
                 qty = max_qty_cash
@@ -180,23 +192,7 @@ def run_backtest_multi_mvp(
             # global risk budget gate
             budget = risk_cap_total * eq_open
             if (pf.total_stop_risk() + stop_risk_cash) <= budget and pf.can_open(sym, max_positions):
-                ok = pf.open_long(sym, qty, exec_px, dt, stop_price, fee)
-                if not ok:
-                    # Helpful debug if something else blocks the entry
-                    print(
-                        "[debug] open_long_failed",
-                        sym,
-                        "dt",
-                        str(dt.date()),
-                        "qty",
-                        float(qty),
-                        "px",
-                        float(exec_px),
-                        "fee",
-                        float(fee),
-                        "cash",
-                        float(pf.cash),
-                    )
+                pf.open_long(sym, qty, exec_px, dt, stop_price, fee)
 
             pending_entry.pop(sym, None)
 
@@ -206,9 +202,13 @@ def run_backtest_multi_mvp(
                 row = sym_data[sym].loc[dt]
                 close_p = float(row["close"])
 
+                # universe check on signal day
+                if allowed is not None and sym not in allowed:
+                    continue
+
                 # regime off -> exit next open
                 if pf.has(sym) and (not bool(sym_regime[sym].loc[dt])):
-                    pending_exit.add(sym)
+                    pending_exit_reason[sym] = "regime_off"
 
                 # entry if flat + no pending
                 if (not pf.has(sym)) and (sym not in pending_entry):

@@ -170,4 +170,17 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
         trades.append(tr_sat)
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
 
+    ret = eq_total["equity"].pct_change()
+
+    vol = ret.rolling(30).std() * np.sqrt(252)
+
+    target = 0.12
+
+    scaler = target / vol
+    scaler = scaler.clip(0.5, 1.5)
+
+    ret_adj = ret * scaler.shift(1)
+
+    eq_total["equity"] = (1 + ret_adj.fillna(0)).cumprod() * eq_total["equity"].iloc[0]
+
     return eq_total, tr_total, eq_core, eq_sat

@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  run:
+  # 1) Baseline run (full sample)
+  baseline:
     runs-on: ubuntu-latest
     env:
-      TAG: robust_b150_s2_5_ma52_core90_sat10
-
+      TAG: multi_default
+      SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY
     steps:
       - uses: actions/checkout@v4
 
@@ -21,57 +22,99 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch crypto/ETF data
+      - name: Fetch data (Yahoo)
         run: |
           python scripts/fetch_yahoo.py
 
-      - name: Build core monthly universe
+      - name: Make crypto monthly universe (if present)
         run: |
-          python tools/make_core_monthly.py --n 8 --mom_bars 180 --min_dvol_usd 50000000
-    
-      - name: Build crypto monthly universe
-        run: |
-          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
+          python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0 || true
 
-      - name: Upload crypto universe schedule
-        uses: actions/upload-artifact@v4
-        with:
-          name: crypto_monthly_schedule
-          path: data/universe/crypto_monthly.csv
-          if-no-files-found: error
-          
-      # Backtest
-      - name: Run multi MVP (2005-2014)
+      - name: Make core monthly universe (if present)
         run: |
-          PYTHONPATH=. python run_backtest_multi.py \
-            --tag "test_2005_2012" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,XLK,XLF,XLE,XLV,XLI,SHY,VNQ,DBC \
-            --start 2005-01-01 \
-            --end 2012-12-31
+          python tools/make_core_monthly.py --n 6 --mom_bars 180 || true
 
-      - name: Run multi MVP (2013-2018)
+      - name: Run backtest (baseline)
         run: |
-          PYTHONPATH=. python run_backtest_multi.py \
-            --tag "test_2013_2018" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,XLK,XLF,XLE,XLV,XLI,SHY,VNQ,DBC \
-            --start 2013-01-01 \
-            --end 2018-12-31
-
-      - name: Run multi MVP (2019-2026)
-        run: |
-          PYTHONPATH=. python run_backtest_multi.py \
-            --tag "test_2019_2026" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,XLK,XLF,XLE,XLV,XLI,SHY,VNQ,DBC \
-            --start 2019-01-01 \
-            --end 2026-03-03
+          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols "$SYMBOLS"
 
       - name: Upload artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: outputs
-          path: |
-            data/outputs/**
-            data/universe/crypto_monthly.csv
-            data/universe/core_monthly.csv
-          if-no-files-found: warn
+          name: baseline_outputs
+          path: data/outputs/
+
+  # 2) Walk-forward style sub-period tests (same config)
+  walk_forward:
+    runs-on: ubuntu-latest
+    needs: baseline
+    strategy:
+      fail-fast: false
+      matrix:
+        wf:
+          - { tag: "wf_2005_2012", start: "2005-01-01", end: "2012-12-31" }
+          - { tag: "wf_2013_2018", start: "2013-01-01", end: "2018-12-31" }
+          - { tag: "wf_2019_2026", start: "2019-01-01", end: "2026-03-04" }
+    env:
+      SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch data (Yahoo)
+        run: |
+          python scripts/fetch_yahoo.py
+
+      - name: Run backtest (walk-forward window)
+        run: |
+          PYTHONPATH=. python run_backtest_multi.py --tag ${{ matrix.wf.tag }} --symbols "$SYMBOLS" --start ${{ matrix.wf.start }} --end ${{ matrix.wf.end }}
+
+      - name: Upload artifacts (WF)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wf_outputs_${{ matrix.wf.tag }}
+          path: data/outputs/${{ matrix.wf.tag }}/
+
+  # 3) Position sizing sanity check: sweep risk_per_trade
+  sizing_sweep:
+    runs-on: ubuntu-latest
+    needs: baseline
+    strategy:
+      fail-fast: false
+      matrix:
+        rpt: [0.0075, 0.01, 0.0125, 0.015]
+    env:
+      SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch data (Yahoo)
+        run: |
+          python scripts/fetch_yahoo.py
+
+      - name: Run backtest (sizing sweep)
+        run: |
+          PYTHONPATH=. python run_backtest_multi.py --tag sizing_rpt_${{ matrix.rpt }} --symbols "$SYMBOLS" --risk_per_trade ${{ matrix.rpt }}
+
+      - name: Upload artifacts (Sizing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sizing_outputs_rpt_${{ matrix.rpt }}
+          path: data/outputs/sizing_rpt_${{ matrix.rpt }}/

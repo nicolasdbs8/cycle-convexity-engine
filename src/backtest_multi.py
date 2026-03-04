@@ -74,9 +74,6 @@ def run_backtest_multi_mvp(
             "signal_cond_days": cond_ok,
         }
 
-    print("[debug] per_symbol_stats=" + json.dumps(stats))
-    # --- END DEBUG STATS ---
-
     # Common trading calendar: intersection to avoid missing bars
     common_idx = None
     for sym, df2 in sym_data.items():

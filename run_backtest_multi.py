@@ -1,7 +1,7 @@
 import os, json, argparse
 from src.config import Config
 from src.data_panel import load_panel
-from src.backtest_multi import run_backtest_multi_mvp
+from src.sleeves import run_backtest_core_satellite
 from src.report import summarize
 
 def parse_args():
@@ -19,22 +19,8 @@ def main():
 
     panel = load_panel(sym_to_path)
 
-    eq_df, tr_df = run_backtest_multi_mvp(
-        panel=panel,
-        fee_rate=cfg.fee_rate,
-        slippage_rate=cfg.slippage_rate,
-        initial_capital=cfg.initial_capital,
-        risk_per_trade=cfg.risk_per_trade,
-        risk_cap_total=cfg.risk_cap_total,
-        max_positions=cfg.max_positions,
-        breakout_days=cfg.breakout_days,
-        mom_days=cfg.mom_days,
-        atr_days=cfg.atr_days,
-        stop_atr_mult=cfg.stop_atr_mult,
-        regime_ma_weeks=cfg.regime_ma_weeks,
-        regime_slope_weeks=cfg.regime_slope_weeks,
-        regime_use_slope=bool(cfg.regime_use_slope),
-    )
+    # NEW: core/satellite sleeves orchestrator (equity total + trades with 'sleeve')
+    eq_df, tr_df = run_backtest_core_satellite(panel=panel, cfg=cfg, symbols=symbols)
 
     out_dir = f"data/outputs/{args.tag}"
     os.makedirs(out_dir, exist_ok=True)

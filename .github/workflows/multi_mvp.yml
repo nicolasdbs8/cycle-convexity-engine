@@ -42,7 +42,7 @@ jobs:
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag "test_2005_2014" \
-            --symbols BTC,ETH,BNB,SOL,SPY,QQQ,GLD,TLT,USO \
+            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,SLV,TLT,IEF,SHY,LQD,HYG,USO,UNG \
             --start 2005-01-03 \
             --end 2014-12-31
 
@@ -50,7 +50,7 @@ jobs:
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag "test_2015_2026" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,TON,SPY,QQQ,GLD,TLT,USO \
+            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,SLV,TLT,IEF,SHY,LQD,HYG,USO,UNG \
             --start 2015-01-01 \
             --end 2026-03-04
 

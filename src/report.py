@@ -21,13 +21,13 @@ def cagr(equity: pd.Series) -> float:
 
 def summarize(eq_df: pd.DataFrame, trades_df: pd.DataFrame) -> dict:
     if eq_df is None or eq_df.empty or "equity" not in eq_df.columns:
-    return {
-        "StartEquity": 0.0,
-        "EndEquity": 0.0,
-        "CAGR": 0.0,
-        "MaxDD": 0.0,
-        "NumTrades": int(len(trades_df)) if trades_df is not None else 0,
-    }
+        return {
+            "StartEquity": 0.0,
+            "EndEquity": 0.0,
+            "CAGR": 0.0,
+            "MaxDD": 0.0,
+            "NumTrades": int(len(trades_df)) if trades_df is not None else 0,
+        }
     eq = eq_df["equity"]
     summary = {
         "StartEquity": float(eq.iloc[0]),

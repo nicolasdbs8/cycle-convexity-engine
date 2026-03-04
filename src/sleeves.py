@@ -28,6 +28,7 @@ def _subset_panel(panel: Dict[str, pd.DataFrame], symbols: List[str]) -> Dict[st
 
 
 def _align_equity(eq_df: Optional[pd.DataFrame], idx: pd.DatetimeIndex, init_val: float) -> pd.Series:
+    """Align an equity curve onto idx and forward-fill. Guarantees first value init_val."""
     if eq_df is None or eq_df.empty:
         return pd.Series(index=idx, data=float(init_val))
 
@@ -62,6 +63,7 @@ def _sum_equity(
 
 
 def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], set]:
+    """Top-N momentum filter for the CORE sleeve (computed on the same bars, no lookahead)."""
     sig_panel: Dict[str, pd.DataFrame] = {}
     for s in core_syms:
         if s not in panel:
@@ -86,12 +88,43 @@ def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], 
     return allowed
 
 
+def _apply_vol_target(eq_df: Optional[pd.DataFrame], target_vol_annual: Optional[float], cfg: Config) -> Optional[pd.DataFrame]:
+    """Volatility targeting on an equity curve (close-to-close), no lookahead via shift(1).
+
+    - Uses rolling std on pct_change() returns.
+    - Annualization: * sqrt(252)
+    - Clamp scaler to [cfg.vol_scaler_min, cfg.vol_scaler_max]
+    - If target_vol_annual is None -> disabled (returns input).
+    """
+    if eq_df is None or eq_df.empty or target_vol_annual is None:
+        return eq_df
+
+    eq = eq_df["equity"].astype(float)
+    if len(eq) < 3:
+        return eq_df
+
+    ret = eq.pct_change()
+    vol = ret.rolling(int(cfg.vol_window_days)).std(ddof=0) * np.sqrt(252.0)
+
+    scaler = (float(target_vol_annual) / vol)
+    scaler = scaler.replace([np.inf, -np.inf], np.nan).fillna(1.0)
+    scaler = scaler.clip(float(cfg.vol_scaler_min), float(cfg.vol_scaler_max))
+
+    # no lookahead: scaler from information up to t-1 applies to return at t
+    ret_adj = ret * scaler.shift(1).fillna(1.0)
+
+    eq_out = (1.0 + ret_adj.fillna(0.0)).cumprod() * float(eq.iloc[0])
+
+    out = eq_df.copy()
+    out["equity"] = eq_out
+    return out
+
+
 def _run(
     panel: Dict[str, pd.DataFrame],
     cfg: Config,
     capital_weight: float,
     allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
-    vol_target_annual: Optional[float] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     return run_backtest_multi_mvp(
         panel=panel,
@@ -109,10 +142,6 @@ def _run(
         regime_slope_weeks=cfg.regime_slope_weeks,
         regime_use_slope=bool(cfg.regime_use_slope),
         allowed_symbols_fn=allowed_symbols_fn,
-        vol_target_annual=vol_target_annual,
-        vol_window_days=cfg.vol_window_days,
-        vol_scaler_min=cfg.vol_scaler_min,
-        vol_scaler_max=cfg.vol_scaler_max,
     )
 
 
@@ -124,8 +153,10 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
         sched = load_crypto_monthly_schedule(CRYPTO_UNIVERSE_PATH)
 
     def sat_allowed(dt: pd.Timestamp) -> set:
+        # If no schedule, allow all sat_syms (static candidate set)
         if sched is None:
             return set(sat_syms)
+        # Otherwise: monthly Top-N list intersected with candidate set
         return set(symbols_for_date(dt, sched)).intersection(set(sat_syms))
 
     core_allowed = _core_allowed_builder(panel, core_syms, cfg)
@@ -133,13 +164,7 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
     eq_core = tr_core = None
     if core_syms:
         core_panel = _subset_panel(panel, core_syms)
-        eq_core, tr_core = _run(
-            core_panel,
-            cfg,
-            cfg.core_weight,
-            allowed_symbols_fn=core_allowed,
-            vol_target_annual=cfg.core_target_vol_annual,
-        )
+        eq_core, tr_core = _run(core_panel, cfg, cfg.core_weight, allowed_symbols_fn=core_allowed)
         if tr_core is not None and not tr_core.empty:
             tr_core = tr_core.copy()
             tr_core["sleeve"] = "core"
@@ -147,16 +172,14 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
     eq_sat = tr_sat = None
     if sat_syms:
         sat_panel = _subset_panel(panel, sat_syms)
-        eq_sat, tr_sat = _run(
-            sat_panel,
-            cfg,
-            cfg.sat_weight,
-            allowed_symbols_fn=sat_allowed,
-            vol_target_annual=cfg.sat_target_vol_annual,
-        )
+        eq_sat, tr_sat = _run(sat_panel, cfg, cfg.sat_weight, allowed_symbols_fn=sat_allowed)
         if tr_sat is not None and not tr_sat.empty:
             tr_sat = tr_sat.copy()
             tr_sat["sleeve"] = "sat"
+
+    # Apply volatility targeting PER SLEEVE (recommended)
+    eq_core = _apply_vol_target(eq_core, cfg.core_target_vol_annual, cfg)
+    eq_sat = _apply_vol_target(eq_sat, cfg.sat_target_vol_annual, cfg)
 
     init_core = float(cfg.initial_capital) * float(cfg.core_weight)
     init_sat = float(cfg.initial_capital) * float(cfg.sat_weight)
@@ -169,18 +192,5 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
     if tr_sat is not None and not tr_sat.empty:
         trades.append(tr_sat)
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
-
-    ret = eq_total["equity"].pct_change()
-
-    vol = ret.rolling(30).std() * np.sqrt(252)
-
-    target = 0.12
-
-    scaler = target / vol
-    scaler = scaler.clip(0.5, 1.5)
-
-    ret_adj = ret * scaler.shift(1)
-
-    eq_total["equity"] = (1 + ret_adj.fillna(0)).cumprod() * eq_total["equity"].iloc[0]
 
     return eq_total, tr_total, eq_core, eq_sat

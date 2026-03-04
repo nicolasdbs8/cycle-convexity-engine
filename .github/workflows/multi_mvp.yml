@@ -38,9 +38,13 @@ jobs:
           if-no-files-found: error
           
       # Backtest
-      - name: Run multi MVP
+      - name: Run multi MVP (2005-2014)
         run: |
-          PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols BTC,ETH,BNB,SOL,SPY,QQQ,GLD,TLT,USO
+          PYTHONPATH=. python run_backtest_multi.py \
+            --tag test_2005_2014 \
+            --symbols BTC,ETH,BNB,SOL,SPY,QQQ,GLD,TLT,USO \
+            --start 2005-01-03 \
+            --end 2014-12-31
 
       - name: Upload outputs
         uses: actions/upload-artifact@v4

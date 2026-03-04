@@ -25,7 +25,10 @@ jobs:
         run: |
           python scripts/fetch_yahoo.py
 
-      # NEW — build crypto monthly universe
+      - name: Build core monthly universe
+        run: |
+          python tools/make_core_monthly.py --n 8 --mom_bars 180 --min_dvol_usd 50000000
+    
       - name: Build crypto monthly universe
         run: |
           python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
@@ -70,4 +73,5 @@ jobs:
           path: |
             data/outputs/**
             data/universe/crypto_monthly.csv
+            data/universe/core_monthly.csv
           if-no-files-found: warn

@@ -45,6 +45,11 @@ def main():
 
     summary = summarize(eq_df, tr_df)
 
+    if "sleeve" in tr_df.columns and len(tr_df) > 0:
+        summary["TradesBySleeve"] = tr_df["sleeve"].value_counts().to_dict()
+    else:
+        summary["TradesBySleeve"] = {"core": 0, "sat": 0}
+
     payload = {
         "tag": args.tag,
         "symbols": symbols,

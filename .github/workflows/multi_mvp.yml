@@ -2,6 +2,9 @@ name: multi-mvp
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - core-monthly
 
 jobs:
   baseline:

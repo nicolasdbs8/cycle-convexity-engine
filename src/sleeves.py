@@ -115,4 +115,4 @@ def run_backtest_core_satellite(panel, cfg: Config, symbols):
 
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
 
-    return eq_total, tr_total
+    return eq_total, tr_total, eq_core, eq_sat

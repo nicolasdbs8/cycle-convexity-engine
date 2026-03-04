@@ -1,13 +1,13 @@
 # STATE.md
 
 ## Version actuelle
-v0.2.0
+v0.3.0
 
 ---
 
 # Implémenté
 
-## Moteur de backtest
+## Backtest multi-actifs
 
 - exécution next open
 - stops intraday
@@ -31,19 +31,69 @@ Artefacts :
 
 ---
 
-## Multi-assets
+## Architecture core / satellite
 
-Univers :
+Implémentée via :
 
-- BTC
-- ETH
-- SPY
-- QQQ
-- GLD
-- TLT
-- USO
 
-Loader panel multi-symbol.
+src/sleeves.py
+
+
+Structure :
+
+
+core ETF
++
+satellite crypto
+
+
+Les sleeves sont backtestées séparément puis agrégées.
+
+---
+
+## Univers actuel
+
+### Core
+
+SPY  
+QQQ  
+IWM  
+EFA  
+EEM  
+GLD  
+TLT  
+IEF  
+SHY  
+
+### Satellite crypto
+
+BTC  
+ETH  
+BNB  
+SOL  
+XRP  
+ADA  
+DOGE  
+TRX  
+LINK  
+
+---
+
+## Univers crypto dynamique
+
+Pipeline :
+
+
+scripts/make_crypto_monthly.py
+
+
+Produit :
+
+
+data/universe/crypto_monthly.csv
+
+
+Univers figé par mois.
 
 ---
 
@@ -55,33 +105,36 @@ Tests réalisés :
 - Monte Carlo
 - walk-forward
 - audit anti-lookahead
+- tests sous-périodes
 
 ---
 
-## Résultats principaux
+## Résultats récents
 
-Configuration actuelle :
+Tests sous-périodes :
 
-- breakout = 150
-- stop = 2.5 ATR
-- regime = MA52 weekly
-- max positions = 3
-- risk cap total = 0.06
 
-Performance ETF walk-forward :
+2005-2014
+CAGR ≈ 3 %
+MaxDD ≈ -17 %
 
-- CAGR médian ≈ 7 %
-- PF toujours > 1
-- MaxDD ≈ -22 %
+2015-2026
+CAGR ≈ 10 %
+MaxDD ≈ -35 %
+
+
+Conclusion :
+
+- core stabilise le portefeuille
+- crypto apporte l’alpha
 
 ---
 
 # Limites actuelles
 
-- univers crypto réduit (BTC/ETH)
-- pas encore de sélection top N
-- pas encore d’allocation core / satellite
-- pas encore d’execution layer réel
+- diversification core encore limitée
+- drawdown portefeuille ~35 %
+- dépendance partielle aux tendances crypto
 
 ---
 
@@ -89,8 +142,6 @@ Performance ETF walk-forward :
 
 Implémenter :
 
-core ETF  
-+  
-satellite crypto
-
-Architecture portefeuille séparée.
+1. volatility targeting portefeuille
+2. diversification supplémentaire du core
+3. second breakout potentiel

@@ -9,12 +9,8 @@ import pandas as pd
 from .backtest_multi import run_backtest_multi_mvp
 from .config import Config
 from .universe import load_crypto_monthly_schedule, symbols_for_date
-from .strategy import build_signals
 
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
-
-# ---- Core ranking (recommended)
-CORE_TOP_N = 3
 
 # --- Vol scaling settings ---
 USE_VOL_SCALING = True
@@ -150,35 +146,6 @@ def _make_risk_per_trade_fn(base_rpt: float, proxy_ret: pd.Series, target_vol_an
     return fn
 
 
-def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], set]:
-    """
-    Core top-N momentum selection. We must precompute signals here,
-    because the backtester builds signals internally (so raw panel has no 'mom').
-    """
-    sig_panel: Dict[str, pd.DataFrame] = {}
-    for s in core_syms:
-        if s not in panel:
-            continue
-        sig_panel[s] = build_signals(panel[s], cfg.breakout_days, cfg.mom_days, cfg.atr_days)
-
-    def allowed(dt: pd.Timestamp) -> set:
-        moms = []
-        for s, df in sig_panel.items():
-            if dt not in df.index:
-                continue
-            m = df.loc[dt].get("mom", np.nan)
-            if pd.notna(m):
-                moms.append((s, float(m)))
-
-        if not moms:
-            return set()
-
-        moms.sort(key=lambda x: x[1], reverse=True)
-        return {s for s, _ in moms[:CORE_TOP_N]}
-
-    return allowed
-
-
 def _run(
     panel: Dict[str, pd.DataFrame],
     cfg: Config,
@@ -219,10 +186,7 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             return set(sat_syms)
         return set(symbols_for_date(dt, sched)).intersection(set(sat_syms))
 
-    # --- core top-N momentum ---
-    core_allowed = _core_allowed_builder(panel, core_syms, cfg)
-
-    # --- vol scaling (ex-ante rolling) ---
+    # --- vol scaling (ex-ante rolling, no lookahead) ---
     core_proxy_ret = _build_proxy_returns(panel, core_syms, allowed_symbols_fn=None)
     sat_proxy_ret = _build_proxy_returns(panel, sat_syms, allowed_symbols_fn=sat_allowed)
 
@@ -237,7 +201,7 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             core_panel,
             cfg,
             cfg.core_weight,
-            allowed_symbols_fn=core_allowed,
+            allowed_symbols_fn=None,          # <-- no ranking, no constraint
             risk_per_trade_fn=core_rpt_fn,
         )
         if tr_core is not None and not tr_core.empty:
@@ -251,7 +215,7 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             sat_panel,
             cfg,
             cfg.sat_weight,
-            allowed_symbols_fn=sat_allowed,
+            allowed_symbols_fn=sat_allowed,   # <-- schedule only
             risk_per_trade_fn=sat_rpt_fn,
         )
         if tr_sat is not None and not tr_sat.empty:

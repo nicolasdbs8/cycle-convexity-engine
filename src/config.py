@@ -32,6 +32,6 @@ class Config:
     risk_cap_total: float = 0.06
 
     # --- Core / Satellite sleeves ---
-    core_weight: float = 0.80
-    sat_weight: float = 0.20
+    core_weight: float = 0.90
+    sat_weight: float = 0.10
     crypto_symbols: tuple[str, ...] = ("BTC", "ETH", "BNB", "SOL")

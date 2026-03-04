@@ -26,6 +26,13 @@ jobs:
         run: |
           python tools/make_crypto_monthly.py --n 3 --mom_bars 180 --min_dvol_usd 0
 
+      - name: Upload crypto universe schedule
+        uses: actions/upload-artifact@v4
+        with:
+          name: crypto_monthly_schedule
+          path: data/universe/crypto_monthly.csv
+          if-no-files-found: error
+          
       # Backtest
       - name: Run multi MVP
         run: |

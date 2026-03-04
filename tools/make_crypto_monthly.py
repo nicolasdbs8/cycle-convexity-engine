@@ -16,23 +16,33 @@ class SymSeries:
 
 
 def _read_ohlcv(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    # This handles Yahoo-style exports like:
+    # Price,Open,High,Low,Close
+    # Ticker,BTC-USD,BTC-USD,BTC-USD,BTC-USD
+    # Date,,,,
+    # 2014-09-17,465.86,468.17,452.42,457.33
+    df = pd.read_csv(path, header=None)
 
-    # normalize column names
-    df.columns = [c.strip().lower() for c in df.columns]
+    if df.shape[1] < 5:
+        raise ValueError(f"{path}: expected at least 5 columns")
 
-    # accept date or timestamp
-    if "date" not in df.columns:
-        if "timestamp" in df.columns:
-            df.rename(columns={"timestamp": "date"}, inplace=True)
-        else:
-            raise ValueError(f"{path}: missing date column")
+    # Drop the first 3 rows (metadata), keep the rest as data
+    df = df.iloc[3:].copy()
+    df.columns = ["date", "open", "high", "low", "close"] + [f"col_{i}" for i in range(5, df.shape[1])]
 
-    for col in ["open", "high", "low", "close"]:
-        if col not in df.columns:
-            raise ValueError(f"{path}: missing '{col}' column")
+    # Coerce types
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    for c in ["open", "high", "low", "close"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    df["date"] = pd.to_datetime(df["date"])
+    # Optional volume if present
+    if "col_5" in df.columns:
+        # if the 6th column is volume in your exports, rename it
+        # (if not, it will just be ignored later)
+        df.rename(columns={"col_5": "volume"}, inplace=True)
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+
+    df = df.dropna(subset=["date", "open", "high", "low", "close"])
     df = df.sort_values("date").drop_duplicates("date").set_index("date")
 
     return df

@@ -21,6 +21,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Fetch crypto data
+        run: |
+          python tools/fetch_crypto.py
+
       # NEW — build crypto monthly universe
       - name: Build crypto monthly universe
         run: |

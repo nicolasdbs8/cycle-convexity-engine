@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class Config:
     # Data
     csv_path: str = "data/BTCUSD_daily.csv"
 
-    # Backtest window
+    # Backtest window (optional)
     start_date: str | None = None
     end_date: str | None = None
 
@@ -24,6 +25,7 @@ class Config:
     atr_days: int = 20
     stop_atr_mult: float = 2.5
 
+    # Risk (base)
     risk_per_trade: float = 0.02
     initial_capital: float = 10_000.0
 
@@ -34,4 +36,19 @@ class Config:
     # --- Core / Satellite sleeves ---
     core_weight: float = 0.90
     sat_weight: float = 0.10
-    crypto_symbols: tuple[str, ...] = ("BTC", "ETH", "BNB", "SOL")
+
+    # Crypto candidates (the “satellite candidate set”)
+    crypto_symbols: tuple[str, ...] = (
+        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "LINK", "TON"
+    )
+
+    # --- Volatility targeting (per sleeve) ---
+    # If None: disabled for that sleeve.
+    core_target_vol_annual: float | None = 0.10
+    sat_target_vol_annual: float | None = 0.20
+
+    # Realized-vol window and scaler clamps.
+    # vol_scaler_max=1.0 => no leverage (only scales DOWN risk when vol is high)
+    vol_window_days: int = 30
+    vol_scaler_min: float = 0.25
+    vol_scaler_max: float = 1.0

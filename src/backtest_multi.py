@@ -8,6 +8,14 @@ from .strategy import build_signals
 from .regime import compute_weekly_regime
 
 
+def _rolling_ann_vol(ret_s: pd.Series, window: int) -> float:
+    """Return latest rolling annualized vol (sqrt(252) * std) or NaN."""
+    if ret_s is None or len(ret_s) < window:
+        return float("nan")
+    v = ret_s.iloc[-window:].astype(float).std(ddof=0) * np.sqrt(252.0)
+    return float(v)
+
+
 def run_backtest_multi_mvp(
     panel: Dict[str, pd.DataFrame],
     fee_rate: float,
@@ -24,22 +32,32 @@ def run_backtest_multi_mvp(
     regime_slope_weeks: int,
     regime_use_slope: bool,
     allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
+    # Optional dynamic risk budget (kept for compatibility; sleeves can pass None)
     risk_per_trade_fn: Optional[Callable[[pd.Timestamp], float]] = None,
+    # Portfolio volatility targeting (applied as a scaler to risk budgets)
+    vol_target_annual: Optional[float] = None,
+    vol_window_days: int = 30,
+    vol_scaler_min: float = 0.25,
+    vol_scaler_max: float = 1.0,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Multi-asset backtest (long-only breakout) with:
       - next-open execution
       - fees + slippage
-      - ATR stop
+      - ATR stop (fixed at entry)
       - weekly MA regime filter
       - global risk cap (sum stop-risk)
       - max_positions
       - optional universe constraint via allowed_symbols_fn(dt)->set(symbols)
-      - optional dynamic risk via risk_per_trade_fn(dt)->float
+
+    IMPORTANT (anti-lookahead):
+      - sizing uses EQUITY AT OPEN computed from *previous known close* marks
+      - signals are computed on close (EOD) and queued for next available open
+      - equity curve is marked on close (EOD)
 
     Robust calendar handling:
-      - uses UNION of all timestamps across symbols
-      - only trades a symbol on dates where it has a bar
+      - UNION of all timestamps across symbols
+      - trades a symbol only on dates where it has a bar
       - marks equity using last known close for symbols without a bar on dt (e.g., ETFs on weekends)
     """
 
@@ -70,42 +88,44 @@ def run_backtest_multi_mvp(
     def has_bar(sym: str, dt: pd.Timestamp) -> bool:
         return dt in sym_data[sym].index
 
-    # Last known close price per symbol (for marking)
+    # Last known close price per symbol (known at the NEXT open)
     last_close: Dict[str, float] = {}
     for sym, df2 in sym_data.items():
         last_close[sym] = float(df2["close"].iloc[0])
 
-    pf = PortfolioMulti(cash=initial_capital)
+    pf = PortfolioMulti(cash=float(initial_capital))
     equity_curve: List[dict] = []
     trades: List[dict] = []
 
-    pending_entry = {}        # sym -> dict(signal_date, atr)
-    pending_exit_reason = {}  # sym -> reason string
+    pending_entry: Dict[str, dict] = {}        # sym -> dict(signal_date, atr)
+    pending_exit_reason: Dict[str, str] = {}   # sym -> reason
+
+    # For realized-vol targeting we use *close-to-close* portfolio returns
+    eq_close_hist: List[float] = []
+    ret_hist: List[float] = []
 
     for dt in calendar:
         allowed = allowed_symbols_fn(dt) if allowed_symbols_fn is not None else None
 
-        # update last close
-        for sym in sym_data.keys():
-            if has_bar(sym, dt):
-                last_close[sym] = float(sym_data[sym].loc[dt, "close"])
+        # ---- OPEN STATE (known info at the open) ----
+        marks_prevclose = {sym: float(last_close[sym]) for sym in sym_data.keys()}
+        eq_open = float(pf.equity(marks_prevclose))
 
-        marks_close = {sym: float(last_close[sym]) for sym in sym_data.keys()}
-        eq_now = pf.equity(marks_close)
+        # Realized-vol scaler (based only on PAST close-to-close returns)
+        vol_scaler = 1.0
+        if vol_target_annual is not None and vol_window_days > 0:
+            v = _rolling_ann_vol(pd.Series(ret_hist), vol_window_days)
+            if np.isfinite(v) and v > 0:
+                vol_scaler = float(vol_target_annual) / float(v)
+                vol_scaler = max(float(vol_scaler_min), min(float(vol_scaler_max), vol_scaler))
 
-        # dynamic risk for today (clamped)
-        rpt = float(risk_per_trade_fn(dt)) if risk_per_trade_fn is not None else float(risk_per_trade)
-        if not np.isfinite(rpt):
-            rpt = float(risk_per_trade)
-        rpt = max(0.0, min(0.10, rpt))  # hard clamp safety
-
-        # forced exits if universe drops
+        # If universe says a held symbol is no longer allowed, schedule exit
         if allowed is not None:
             for sym in list(pf.positions.keys()):
                 if sym not in allowed and sym not in pending_exit_reason:
                     pending_exit_reason[sym] = "universe_exit"
 
-        # 1) execute exits at open
+        # 1) Execute exits at open (only if the symbol has a bar today)
         for sym in list(pending_exit_reason.keys()):
             reason = pending_exit_reason.get(sym, "exit")
             if not pf.has(sym):
@@ -134,7 +154,7 @@ def run_backtest_multi_mvp(
             })
             pending_exit_reason.pop(sym, None)
 
-        # 2) stop intraday
+        # 2) Stop intraday (only if symbol has a bar today)
         for sym in list(pf.positions.keys()):
             if not has_bar(sym, dt):
                 continue
@@ -160,7 +180,7 @@ def run_backtest_multi_mvp(
                 })
                 pending_exit_reason.pop(sym, None)
 
-        # 3) execute entries at open
+        # 3) Execute entries at open (only if symbol has a bar today)
         for sym, pe in list(pending_entry.items()):
             if allowed is not None and sym not in allowed:
                 pending_entry.pop(sym, None)
@@ -178,14 +198,18 @@ def run_backtest_multi_mvp(
                 pending_entry.pop(sym, None)
                 continue
 
-            eq_open = eq_now
-            risk_cash = eq_open * rpt
+            rpt = float(risk_per_trade_fn(dt)) if risk_per_trade_fn is not None else float(risk_per_trade)
+            rpt_eff = rpt * float(vol_scaler)
+            cap_eff = float(risk_cap_total) * float(vol_scaler)
+
+            risk_cash = eq_open * rpt_eff
             per_unit_risk = max(exec_px - stop_price, 1e-12)
             qty = risk_cash / per_unit_risk
 
-            # cash cap (no leverage)
+            # CASH CAP (no leverage)
             max_qty_cash = pf.cash / (exec_px * (1.0 + fee_rate))
-            qty = min(qty, max_qty_cash)
+            if qty > max_qty_cash:
+                qty = max_qty_cash
             if qty <= 0:
                 pending_entry.pop(sym, None)
                 continue
@@ -194,13 +218,27 @@ def run_backtest_multi_mvp(
             fee = notional * fee_rate
             stop_risk_cash = qty * max(0.0, exec_px - stop_price)
 
-            budget = risk_cap_total * eq_open
+            budget = cap_eff * eq_open
             if (pf.total_stop_risk() + stop_risk_cash) <= budget and pf.can_open(sym, max_positions):
                 pf.open_long(sym, qty, exec_px, dt, stop_price, fee)
 
             pending_entry.pop(sym, None)
 
-        # 4) EOD signals
+        # ---- CLOSE STATE (EOD data becomes known now) ----
+        for sym in sym_data.keys():
+            if has_bar(sym, dt):
+                last_close[sym] = float(sym_data[sym].loc[dt, "close"])
+
+        marks_close = {sym: float(last_close[sym]) for sym in sym_data.keys()}
+        eq_close = float(pf.equity(marks_close))
+
+        if len(eq_close_hist) > 0:
+            prev = float(eq_close_hist[-1])
+            if prev > 0:
+                ret_hist.append((eq_close / prev) - 1.0)
+        eq_close_hist.append(eq_close)
+
+        # 4) Generate signals (EOD)
         for sym in sym_data.keys():
             if not has_bar(sym, dt):
                 continue
@@ -227,7 +265,7 @@ def run_backtest_multi_mvp(
                 if cond:
                     pending_entry[sym] = {"signal_date": dt, "atr": float(atr_v)}
 
-        equity_curve.append({"date": dt, "equity": float(eq_now)})
+        equity_curve.append({"date": dt, "equity": float(eq_close)})
 
     eq_df = pd.DataFrame(equity_curve).set_index("date")
     trades_df = pd.DataFrame(trades)

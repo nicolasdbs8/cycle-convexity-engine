@@ -9,16 +9,10 @@ import pandas as pd
 from .backtest_multi import run_backtest_multi_mvp
 from .config import Config
 from .universe import load_crypto_monthly_schedule, symbols_for_date
+from .strategy import build_signals
 
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
-
-# --- Vol scaling settings ---
-USE_VOL_SCALING = True
-VOL_WINDOW_DAYS = 30
-CORE_TARGET_VOL_ANN = 0.10
-SAT_TARGET_VOL_ANN = 0.20
-SCALER_MIN = 0.25
-SCALER_MAX = 2.0
+CORE_TOP_N = 3
 
 
 def _split_symbols(symbols: List[str], crypto_symbols: tuple[str, ...]) -> Tuple[List[str], List[str]]:
@@ -34,20 +28,13 @@ def _subset_panel(panel: Dict[str, pd.DataFrame], symbols: List[str]) -> Dict[st
 
 
 def _align_equity(eq_df: Optional[pd.DataFrame], idx: pd.DatetimeIndex, init_val: float) -> pd.Series:
-    """
-    Reindex equity to idx, forward-fill, and GUARANTEE first value is init_val (no NaN).
-    """
     if eq_df is None or eq_df.empty:
         return pd.Series(index=idx, data=float(init_val))
 
     s = eq_df["equity"].astype(float).reindex(idx)
-
-    # if first is NaN, set to init
-    if pd.isna(s.iloc[0]):
+    if len(s) > 0 and pd.isna(s.iloc[0]):
         s.iloc[0] = float(init_val)
-
-    s = s.ffill().fillna(float(init_val))
-    return s
+    return s.ffill().fillna(float(init_val))
 
 
 def _sum_equity(
@@ -66,7 +53,6 @@ def _sum_equity(
         return pd.DataFrame(columns=["equity"])
 
     idx = idx.sort_values()
-
     s_core = _align_equity(eq_core, idx, init_core)
     s_sat = _align_equity(eq_sat, idx, init_sat)
 
@@ -75,75 +61,29 @@ def _sum_equity(
     return out
 
 
-def _build_proxy_returns(
-    panel: Dict[str, pd.DataFrame],
-    symbols: List[str],
-    allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
-) -> pd.Series:
-    """
-    Equal-weight proxy returns (close-to-close) for vol scaling.
-    No lookahead; robust to missing bars.
-    """
-    if not symbols:
-        return pd.Series(dtype=float)
-
-    all_idx = None
-    for s in symbols:
+def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], set]:
+    sig_panel: Dict[str, pd.DataFrame] = {}
+    for s in core_syms:
         if s not in panel:
             continue
-        all_idx = panel[s].index if all_idx is None else all_idx.union(panel[s].index)
-    if all_idx is None or len(all_idx) == 0:
-        return pd.Series(dtype=float)
+        sig_panel[s] = build_signals(panel[s], cfg.breakout_days, cfg.mom_days, cfg.atr_days)
 
-    cal = all_idx.sort_values()
-    last_close: Dict[str, float] = {}
-    out = []
-
-    for dt in cal:
-        allowed = allowed_symbols_fn(dt) if allowed_symbols_fn is not None else None
-        vals = []
-
-        for s in symbols:
-            if s not in panel:
-                continue
-            if allowed is not None and s not in allowed:
-                continue
-            df = panel[s]
+    def allowed(dt: pd.Timestamp) -> set:
+        moms = []
+        for s, df in sig_panel.items():
             if dt not in df.index:
                 continue
+            m = df.loc[dt].get("mom", np.nan)
+            if pd.notna(m):
+                moms.append((s, float(m)))
 
-            c = float(df.loc[dt, "close"])
-            if s in last_close:
-                prev = float(last_close[s])
-                if prev > 0:
-                    vals.append((c / prev) - 1.0)
-            last_close[s] = c
+        if not moms:
+            return set()
 
-        out.append((dt, float(np.mean(vals)) if len(vals) > 0 else np.nan))
+        moms.sort(key=lambda x: x[1], reverse=True)
+        return {s for s, _ in moms[:CORE_TOP_N]}
 
-    return pd.Series({dt: r for dt, r in out}).sort_index()
-
-
-def _rolling_ann_vol(ret_s: pd.Series, window: int) -> pd.Series:
-    return ret_s.astype(float).rolling(window=window, min_periods=window).std() * np.sqrt(252.0)
-
-
-def _make_risk_per_trade_fn(base_rpt: float, proxy_ret: pd.Series, target_vol_ann: float) -> Callable[[pd.Timestamp], float]:
-    vol = _rolling_ann_vol(proxy_ret, VOL_WINDOW_DAYS)
-
-    def fn(dt: pd.Timestamp) -> float:
-        if not USE_VOL_SCALING:
-            return float(base_rpt)
-
-        v = vol.get(dt, np.nan)
-        if v is None or (not np.isfinite(v)) or v <= 0:
-            return float(base_rpt)
-
-        scaler = float(target_vol_ann) / float(v)
-        scaler = max(SCALER_MIN, min(SCALER_MAX, scaler))
-        return float(base_rpt) * scaler
-
-    return fn
+    return allowed
 
 
 def _run(
@@ -151,8 +91,8 @@ def _run(
     cfg: Config,
     capital_weight: float,
     allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
-    risk_per_trade_fn: Optional[Callable[[pd.Timestamp], float]] = None,
-):
+    vol_target_annual: Optional[float] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     return run_backtest_multi_mvp(
         panel=panel,
         fee_rate=cfg.fee_rate,
@@ -169,14 +109,16 @@ def _run(
         regime_slope_weeks=cfg.regime_slope_weeks,
         regime_use_slope=bool(cfg.regime_use_slope),
         allowed_symbols_fn=allowed_symbols_fn,
-        risk_per_trade_fn=risk_per_trade_fn,
+        vol_target_annual=vol_target_annual,
+        vol_window_days=cfg.vol_window_days,
+        vol_scaler_min=cfg.vol_scaler_min,
+        vol_scaler_max=cfg.vol_scaler_max,
     )
 
 
 def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, symbols: List[str]):
     core_syms, sat_syms = _split_symbols(symbols, cfg.crypto_symbols)
 
-    # --- sat monthly schedule (optional) ---
     sched = None
     if os.path.exists(CRYPTO_UNIVERSE_PATH):
         sched = load_crypto_monthly_schedule(CRYPTO_UNIVERSE_PATH)
@@ -186,14 +128,8 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             return set(sat_syms)
         return set(symbols_for_date(dt, sched)).intersection(set(sat_syms))
 
-    # --- vol scaling (ex-ante rolling, no lookahead) ---
-    core_proxy_ret = _build_proxy_returns(panel, core_syms, allowed_symbols_fn=None)
-    sat_proxy_ret = _build_proxy_returns(panel, sat_syms, allowed_symbols_fn=sat_allowed)
+    core_allowed = _core_allowed_builder(panel, core_syms, cfg)
 
-    core_rpt_fn = _make_risk_per_trade_fn(cfg.risk_per_trade, core_proxy_ret, CORE_TARGET_VOL_ANN)
-    sat_rpt_fn = _make_risk_per_trade_fn(cfg.risk_per_trade, sat_proxy_ret, SAT_TARGET_VOL_ANN)
-
-    # --- run sleeves with FIXED capital weights (cfg.core_weight/cfg.sat_weight) ---
     eq_core = tr_core = None
     if core_syms:
         core_panel = _subset_panel(panel, core_syms)
@@ -201,8 +137,8 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             core_panel,
             cfg,
             cfg.core_weight,
-            allowed_symbols_fn=None,          # <-- no ranking, no constraint
-            risk_per_trade_fn=core_rpt_fn,
+            allowed_symbols_fn=core_allowed,
+            vol_target_annual=cfg.core_target_vol_annual,
         )
         if tr_core is not None and not tr_core.empty:
             tr_core = tr_core.copy()
@@ -215,8 +151,8 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
             sat_panel,
             cfg,
             cfg.sat_weight,
-            allowed_symbols_fn=sat_allowed,   # <-- schedule only
-            risk_per_trade_fn=sat_rpt_fn,
+            allowed_symbols_fn=sat_allowed,
+            vol_target_annual=cfg.sat_target_vol_annual,
         )
         if tr_sat is not None and not tr_sat.empty:
             tr_sat = tr_sat.copy()
@@ -233,5 +169,18 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
     if tr_sat is not None and not tr_sat.empty:
         trades.append(tr_sat)
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
+
+    ret = eq_total["equity"].pct_change()
+
+    vol = ret.rolling(30).std() * np.sqrt(252)
+
+    target = 0.12
+
+    scaler = target / vol
+    scaler = scaler.clip(0.5, 1.5)
+
+    ret_adj = ret * scaler.shift(1)
+
+    eq_total["equity"] = (1 + ret_adj.fillna(0)).cumprod() * eq_total["equity"].iloc[0]
 
     return eq_total, tr_total, eq_core, eq_sat

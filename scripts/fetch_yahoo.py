@@ -32,6 +32,16 @@ SYMBOLS = {
     "SLV": "SLV",
     "USO": "USO",
     "UNG": "UNG",
+
+    # --- Core ETFs (extended) ---
+    "XLF": "XLF",
+    "XLE": "XLE",
+    "XLK": "XLK",
+    "XLV": "XLV",
+    "XLI": "XLI",
+    "VNQ": "VNQ",
+    "DBC": "DBC",
+    
 }
 
 OUT_DIR = "data/raw"

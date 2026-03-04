@@ -25,17 +25,39 @@ def _subset_panel(panel, symbols):
     return {s: panel[s] for s in symbols if s in panel}
 
 
-def _sum_equity(eq_a, eq_b):
-    if eq_a is None:
-        return eq_b
-    if eq_b is None:
-        return eq_a
+def _align_equity(eq_df, idx, init_val: float) -> pd.Series:
+    if eq_df is None or eq_df.empty:
+        s = pd.Series(index=idx, data=float(init_val))
+        return s
 
-    idx = eq_a.index.intersection(eq_b.index)
+    s = eq_df["equity"].astype(float).reindex(idx)
+
+    # If the sleeve starts later, treat equity as flat at init_val until it exists
+    if pd.isna(s.iloc[0]):
+        s.iloc[0] = float(init_val)
+
+    s = s.ffill()
+    s = s.fillna(float(init_val))
+    return s
+
+
+def _sum_equity(eq_core, eq_sat, init_core: float, init_sat: float) -> pd.DataFrame:
+    # Union of calendars, not intersection
+    idx = None
+    if eq_core is not None and not eq_core.empty:
+        idx = eq_core.index if idx is None else idx.union(eq_core.index)
+    if eq_sat is not None and not eq_sat.empty:
+        idx = eq_sat.index if idx is None else idx.union(eq_sat.index)
+
+    if idx is None:
+        return pd.DataFrame(columns=["equity"])
+
+    idx = idx.sort_values()
+    s_core = _align_equity(eq_core, idx, init_core)
+    s_sat = _align_equity(eq_sat, idx, init_sat)
 
     out = pd.DataFrame(index=idx)
-    out["equity"] = eq_a.loc[idx, "equity"] + eq_b.loc[idx, "equity"]
-
+    out["equity"] = s_core.values + s_sat.values
     return out
 
 
@@ -79,7 +101,9 @@ def run_backtest_core_satellite(panel, cfg: Config, symbols):
         eq_sat, tr_sat = _run(sat_panel, cfg, cfg.sat_weight)
         tr_sat["sleeve"] = "sat"
 
-    eq_total = _sum_equity(eq_core, eq_sat)
+    init_core = cfg.initial_capital * cfg.core_weight
+    init_sat = cfg.initial_capital * cfg.sat_weight
+    eq_total = _sum_equity(eq_core, eq_sat, init_core, init_sat)
 
     trades = []
 

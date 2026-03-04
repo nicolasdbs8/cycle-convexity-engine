@@ -21,6 +21,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # NEW — build crypto monthly universe
+      - name: Build crypto monthly universe
+        run: |
+          python tools/make_crypto_monthly.py --n 3 --mom_bars 180
+
+      # Backtest
       - name: Run multi MVP
         run: |
           PYTHONPATH=. python run_backtest_multi.py --tag $TAG --symbols BTC,ETH,SPY,QQQ,GLD,TLT,USO

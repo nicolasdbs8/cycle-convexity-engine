@@ -1,101 +1,134 @@
 # cycle-convexity-engine
-## Architecture systématique de croissance asymétrique multi-régime
+## Architecture systématique de croissance asymétrique multi-actifs
 
 ---
 
 # 1. Objectif
 
-Maximiser la croissance géométrique du capital (log-growth) sur un horizon de 10 ans.
+Maximiser la croissance géométrique du capital sur un horizon long terme.
 
 Contraintes :
-- Pas de ruine technique (liquidation totale).
-- Risque opérationnel maîtrisé.
-- Drawdowns acceptés mais structurellement contrôlés.
-- Approche 100 % systématique.
+
+- risque de ruine exclu
+- drawdowns acceptés mais contrôlés
+- approche entièrement systématique
+- validation hors échantillon obligatoire
 
 ---
 
 # 2. Philosophie
 
-- Aucune discrétion en live.
-- Règles mathématiquement définies.
-- Backtestable, falsifiable.
-- Complexité ajoutée uniquement si edge démontré.
-- Pas d’optimisation paramétrique au départ.
+- aucune discrétion en live
+- règles simples et testables
+- complexité ajoutée uniquement si edge démontré
+- priorité à la robustesse
 
 ---
 
-# 3. Architecture Générale
+# 3. Architecture générale
 
-## Phase 1 : Trend Convexity Engine v1
-Bloc directionnel basé sur :
-- Régime BTC weekly
-- Momentum / breakout structurel
-- Volatility targeting
-- Kill switch strict
+## Core Trend Engine
 
-## Phase 2 : Carry Overlay v1
-Bloc non directionnel basé sur :
-- Funding / basis
-- Allocation plafonnée
-- Levier minimal
-- Gestion stricte du risque exchange
+Trend-following multi-actifs basé sur :
+
+- breakout structurel
+- filtre de régime
+- sizing basé sur volatilité
+- risk cap portefeuille
 
 ---
 
-# 4. Spécification Trend v1 (gelée)
+# 4. Spécification actuelle
 
 ## Régime
-- BTC weekly close > MA200 weekly
-- MA200 slope positive
+
+MA52 weekly.
+
+Objectif :
+
+- éviter les marchés bear prolongés
+- rester exposé en bull markets.
+
+---
 
 ## Univers
-- BTC + top N actifs par market cap/liquidité
-- Univers figé mensuellement
-- Exclusion volume insuffisant
-- Pas d’optimisation du N
+
+Core :
+
+ETF liquides :
+
+- SPY
+- QQQ
+- GLD
+- TLT
+- USO
+
+Satellite :
+
+crypto large cap :
+
+- BTC
+- ETH
+
+Extension future :
+
+top N crypto par liquidité.
+
+---
 
 ## Entrée
-- Close > highest high rolling N jours
-- Momentum 90–180 jours positif
 
-## Sizing
-- Basé sur ATR / volatilité
-- 3–5 positions max
-- Levier modéré uniquement si régime bull confirmé
+Close > highest high rolling N jours.
+
+Momentum positif sur 90–180 jours.
+
+---
 
 ## Sortie
-- Kill switch si régime OFF
-- Stop structurel mathématique (rolling low ou ATR)
+
+Stop structurel :
+
+2.5 × ATR.
+
+Sortie régime si marché bear.
+
+---
+
+## Sizing
+
+- volatilité ajustée
+- max 3 positions
+- risk cap total = 0.06
 
 ---
 
 # 5. Anti-biais
 
-- Paramètres ronds uniquement
-- Validation par sous-périodes
-- Monte Carlo obligatoire avant live
-- Sensibilité aux coûts testée
-- Aucune modification post hoc sur equity curve
+- paramètres ronds
+- validation sous-périodes
+- walk-forward
+- Monte Carlo
+- audit anti-lookahead
 
 ---
 
-# 6. Métriques de Validation
+# 6. Métriques
 
 - CAGR
-- Log-growth
 - Max Drawdown
-- Temps en drawdown
-- Profit factor
-- Skew
-- Distribution Monte Carlo
-- Benchmark vs BTC buy & hold
+- Profit Factor
+- temps en drawdown
+- distribution Monte Carlo
 
 ---
 
-# 7. Règles non négociables
+# 7. Architecture cible
 
-- Pas de scalping retail
-- Pas d’interprétation visuelle
-- Pas d’ajustement discrétionnaire
-- Discipline stricte de versioning
+Core ETF robuste  
++  
+Satellite crypto opportuniste
+
+Objectif :
+
+- stabilité du capital
+- convexité dans les phases bull crypto.

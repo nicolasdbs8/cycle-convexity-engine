@@ -11,12 +11,20 @@ def parse_args():
     p.add_argument("--symbols", type=str, default="BTC,ETH")  # comma list
     p.add_argument("--start", type=str, default=None)         # YYYY-MM-DD
     p.add_argument("--end", type=str, default=None)           # YYYY-MM-DD
+
+    # Optional overrides (for controlled experiments)
+    p.add_argument("--risk_per_trade", type=float, default=None)  # e.g. 0.01
+
     return p.parse_args()
 
 
 def main():
     args = parse_args()
     cfg = Config()
+
+    # Apply CLI overrides (keep it minimal + explicit)
+    if args.risk_per_trade is not None:
+        cfg.risk_per_trade = float(args.risk_per_trade)
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     sym_to_path = {s: f"data/raw/{s}.csv" for s in symbols}
@@ -43,7 +51,7 @@ def main():
 
     summary = summarize(eq_df, tr_df)
 
-    if "sleeve" in tr_df.columns and len(tr_df) > 0:
+    if tr_df is not None and "sleeve" in tr_df.columns and len(tr_df) > 0:
         summary["TradesBySleeve"] = tr_df["sleeve"].value_counts().to_dict()
     else:
         summary["TradesBySleeve"] = {"core": 0, "sat": 0}

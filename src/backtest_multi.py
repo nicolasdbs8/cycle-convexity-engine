@@ -66,7 +66,7 @@ def run_backtest_multi_mvp(
     sym_regime: Dict[str, pd.Series] = {}
 
     for sym, df in panel.items():
-        df2 = build_signals(df, breakout_days, mom_days, atr_days)
+        df2 = build_signals(df, breakout_days, mom_days, atr_days, exit_ll_days=50)
         reg = compute_weekly_regime(
             df2,
             regime_ma_weeks,
@@ -251,6 +251,13 @@ def run_backtest_multi_mvp(
             if pf.has(sym) and (not bool(sym_regime[sym].loc[dt])):
                 if sym not in pending_exit_reason:
                     pending_exit_reason[sym] = "regime_off"
+
+            # Donchian exit (trend break): close < LL_prev => exit next open
+            if pf.has(sym):
+                ll_prev = row.get("ll_prev", None)
+                if pd.notna(ll_prev) and (close_p < float(ll_prev)):
+                    if sym not in pending_exit_reason:
+                        pending_exit_reason[sym] = "donchian_ll"
 
             if (not pf.has(sym)) and (sym not in pending_entry):
                 hh_prev = row.get("hh_prev", None)

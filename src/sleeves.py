@@ -11,13 +11,8 @@ def _split_symbols(symbols: Iterable[str], crypto_symbols: tuple[str, ...]):
     crypto_set = set(crypto_symbols)
     core = []
     sat = []
-
     for s in symbols:
-        if s in crypto_set:
-            sat.append(s)
-        else:
-            core.append(s)
-
+        (sat if s in crypto_set else core).append(s)
     return core, sat
 
 
@@ -27,22 +22,17 @@ def _subset_panel(panel, symbols):
 
 def _align_equity(eq_df, idx, init_val: float) -> pd.Series:
     if eq_df is None or eq_df.empty:
-        s = pd.Series(index=idx, data=float(init_val))
-        return s
+        return pd.Series(index=idx, data=float(init_val))
 
     s = eq_df["equity"].astype(float).reindex(idx)
-
-    # If the sleeve starts later, treat equity as flat at init_val until it exists
     if pd.isna(s.iloc[0]):
         s.iloc[0] = float(init_val)
-
     s = s.ffill()
     s = s.fillna(float(init_val))
     return s
 
 
 def _sum_equity(eq_core, eq_sat, init_core: float, init_sat: float) -> pd.DataFrame:
-    # Union of calendars, not intersection
     idx = None
     if eq_core is not None and not eq_core.empty:
         idx = eq_core.index if idx is None else idx.union(eq_core.index)
@@ -61,15 +51,17 @@ def _sum_equity(eq_core, eq_sat, init_core: float, init_sat: float) -> pd.DataFr
     return out
 
 
-def _run(panel, cfg: Config, capital_weight):
-
+def _run(panel, cfg: Config, capital_weight: float):
+    # IMPORTANT:
+    # - initial_capital scales with sleeve weight
+    # - risk_cap_total is already a FRACTION of equity, so DO NOT scale it by weight
     return run_backtest_multi_mvp(
         panel=panel,
         fee_rate=cfg.fee_rate,
         slippage_rate=cfg.slippage_rate,
         initial_capital=cfg.initial_capital * capital_weight,
         risk_per_trade=cfg.risk_per_trade,
-        risk_cap_total=cfg.risk_cap_total * capital_weight,
+        risk_cap_total=cfg.risk_cap_total,  # <-- key fix (no scaling)
         max_positions=cfg.max_positions,
         breakout_days=cfg.breakout_days,
         mom_days=cfg.mom_days,
@@ -82,23 +74,26 @@ def _run(panel, cfg: Config, capital_weight):
 
 
 def run_backtest_core_satellite(panel, cfg: Config, symbols):
+    # guard rails
+    assert 0 <= cfg.core_weight <= 1 and 0 <= cfg.sat_weight <= 1
+    assert abs((cfg.core_weight + cfg.sat_weight) - 1.0) < 1e-9
 
     core_syms, sat_syms = _split_symbols(symbols, cfg.crypto_symbols)
 
     eq_core = None
     tr_core = None
-
     if core_syms:
         core_panel = _subset_panel(panel, core_syms)
         eq_core, tr_core = _run(core_panel, cfg, cfg.core_weight)
+        tr_core = tr_core.copy()
         tr_core["sleeve"] = "core"
 
     eq_sat = None
     tr_sat = None
-
     if sat_syms:
         sat_panel = _subset_panel(panel, sat_syms)
         eq_sat, tr_sat = _run(sat_panel, cfg, cfg.sat_weight)
+        tr_sat = tr_sat.copy()
         tr_sat["sleeve"] = "sat"
 
     init_core = cfg.initial_capital * cfg.core_weight
@@ -106,13 +101,10 @@ def run_backtest_core_satellite(panel, cfg: Config, symbols):
     eq_total = _sum_equity(eq_core, eq_sat, init_core, init_sat)
 
     trades = []
-
     if tr_core is not None and not tr_core.empty:
         trades.append(tr_core)
-
     if tr_sat is not None and not tr_sat.empty:
         trades.append(tr_sat)
-
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
 
     return eq_total, tr_total, eq_core, eq_sat

@@ -1,4 +1,3 @@
-import json
 import pandas as pd
 from typing import Dict, List, Tuple, Callable, Optional
 
@@ -25,10 +24,26 @@ def run_backtest_multi_mvp(
     regime_use_slope: bool,
     allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Multi-asset backtest (long-only breakout) with:
+      - next-open execution
+      - fees + slippage
+      - ATR stop
+      - weekly MA regime filter
+      - global risk cap (sum stop-risk)
+      - max_positions
+      - optional universe constraint via allowed_symbols_fn(dt)->set(symbols)
+
+    Robust calendar handling:
+      - uses UNION of all timestamps across symbols
+      - only trades a symbol on dates where it has a bar
+      - marks equity using last known close for symbols without a bar on dt (e.g., ETFs on weekends)
+    """
 
     # Build signals+regime per symbol
-    sym_data = {}
-    sym_regime = {}
+    sym_data: Dict[str, pd.DataFrame] = {}
+    sym_regime: Dict[str, pd.Series] = {}
+
     for sym, df in panel.items():
         df2 = build_signals(df, breakout_days, mom_days, atr_days)
         reg = compute_weekly_regime(
@@ -40,92 +55,85 @@ def run_backtest_multi_mvp(
         sym_data[sym] = df2
         sym_regime[sym] = reg
 
-    # --- DEBUG STATS (safe, no behavior change) ---
-    stats = {}
-    for sym in sym_data.keys():
-        d = sym_data[sym]
-        r = sym_regime[sym].astype(bool)
+    # Master calendar: UNION of all indices
+    all_idx = None
+    for _, df2 in sym_data.items():
+        all_idx = df2.index if all_idx is None else all_idx.union(df2.index)
+    if all_idx is None or len(all_idx) == 0:
+        return pd.DataFrame(columns=["equity"]), pd.DataFrame()
 
-        hh_ok = int(d["hh_prev"].notna().sum()) if "hh_prev" in d.columns else 0
-        mom_ok = int(d["mom"].notna().sum()) if "mom" in d.columns else 0
-        atr_ok = int(d["atr"].notna().sum()) if "atr" in d.columns else 0
-        reg_true = int(r.sum())
+    calendar = all_idx.sort_values()
 
-        cond_ok = 0
-        if all(c in d.columns for c in ["close", "hh_prev", "mom", "atr"]):
-            c = (
-                r
-                & d["hh_prev"].notna()
-                & d["mom"].notna()
-                & d["atr"].notna()
-                & (d["close"] > d["hh_prev"])
-                & (d["mom"] > 0.0)
-            )
-            cond_ok = int(c.sum())
+    # Helper: row exists?
+    def has_bar(sym: str, dt: pd.Timestamp) -> bool:
+        return dt in sym_data[sym].index
 
-        stats[sym] = {
-            "rows": int(len(d)),
-            "start": str(d.index.min().date()) if len(d) else None,
-            "end": str(d.index.max().date()) if len(d) else None,
-            "hh_prev_notna": hh_ok,
-            "mom_notna": mom_ok,
-            "atr_notna": atr_ok,
-            "regime_true_days": reg_true,
-            "signal_cond_days": cond_ok,
-        }
-
-    # Common trading calendar: intersection to avoid missing bars
-    common_idx = None
+    # Last known close price per symbol (for marking)
+    last_close: Dict[str, float] = {}
     for sym, df2 in sym_data.items():
-        common_idx = df2.index if common_idx is None else common_idx.intersection(df2.index)
-    common_idx = common_idx.sort_values()
+        # initialize from first available close
+        first_close = float(df2["close"].iloc[0])
+        last_close[sym] = first_close
 
     pf = PortfolioMulti(cash=initial_capital)
     equity_curve: List[dict] = []
     trades: List[dict] = []
 
     pending_entry = {}        # sym -> dict(signal_date, atr)
-    pending_exit_reason = {}  # sym -> reason string (exit next open)
+    pending_exit_reason = {}  # sym -> reason string (exit at next available open for that sym)
 
-    for i, dt in enumerate(common_idx):
+    for i, dt in enumerate(calendar):
         allowed = allowed_symbols_fn(dt) if allowed_symbols_fn is not None else None
 
-        # marks at close for equity curve
-        marks_close = {sym: float(sym_data[sym].loc[dt, "close"]) for sym in sym_data.keys()}
+        # Update last_close for symbols that have a bar today
+        for sym in sym_data.keys():
+            if has_bar(sym, dt):
+                last_close[sym] = float(sym_data[sym].loc[dt, "close"])
+
+        # Mark-to-market with last known close
+        marks_close = {sym: float(last_close[sym]) for sym in sym_data.keys()}
         eq_now = pf.equity(marks_close)
 
-        # If universe says a held symbol is no longer allowed, exit next open
+        # If universe says a held symbol is no longer allowed, schedule exit
         if allowed is not None:
             for sym in list(pf.positions.keys()):
                 if sym not in allowed and sym not in pending_exit_reason:
                     pending_exit_reason[sym] = "universe_exit"
 
-        # 1) execute exits at open
+        # 1) Execute exits at open (only if the symbol has an open bar today)
         for sym in list(pending_exit_reason.keys()):
             reason = pending_exit_reason.get(sym, "exit")
-            if pf.has(sym):
-                o = float(sym_data[sym].loc[dt, "open"])
-                exec_px = apply_costs(o, fee_rate, slippage_rate, "sell")
-                notional = pf.positions[sym].qty * exec_px
-                fee = notional * fee_rate
-                pos = pf.close_long(sym, exec_px, dt, fee)
+            if not pf.has(sym):
+                pending_exit_reason.pop(sym, None)
+                continue
+            if not has_bar(sym, dt):
+                # no bar today (e.g., ETF weekend) -> try next calendar date
+                continue
 
-                trades.append({
-                    "symbol": sym,
-                    "entry_date": pos.entry_date,
-                    "entry_price": pos.entry_price,
-                    "entry_fee": pos.entry_fee,
-                    "exit_date": dt,
-                    "exit_price": exec_px,
-                    "exit_fee": fee,
-                    "exit_reason": reason,
-                    "qty": pos.qty,
-                    "stop_price": pos.stop_price,
-                })
+            o = float(sym_data[sym].loc[dt, "open"])
+            exec_px = apply_costs(o, fee_rate, slippage_rate, "sell")
+            notional = pf.positions[sym].qty * exec_px
+            fee = notional * fee_rate
+            pos = pf.close_long(sym, exec_px, dt, fee)
+
+            trades.append({
+                "symbol": sym,
+                "entry_date": pos.entry_date,
+                "entry_price": pos.entry_price,
+                "entry_fee": pos.entry_fee,
+                "exit_date": dt,
+                "exit_price": exec_px,
+                "exit_fee": fee,
+                "exit_reason": reason,
+                "qty": pos.qty,
+                "stop_price": pos.stop_price,
+            })
             pending_exit_reason.pop(sym, None)
 
-        # 2) stop intraday
+        # 2) Stop intraday (only if symbol has a bar today)
         for sym in list(pf.positions.keys()):
+            if not has_bar(sym, dt):
+                continue
             low = float(sym_data[sym].loc[dt, "low"])
             stop = pf.positions[sym].stop_price
             if low <= stop:
@@ -148,15 +156,19 @@ def run_backtest_multi_mvp(
                 })
                 pending_exit_reason.pop(sym, None)
 
-        # 3) execute entries at open (if signaled prev day)
+        # 3) Execute entries at open (only if symbol has a bar today)
         for sym, pe in list(pending_entry.items()):
-            # universe check on execution day too
+            # universe check on execution day
             if allowed is not None and sym not in allowed:
                 pending_entry.pop(sym, None)
                 continue
 
             if pf.has(sym):
                 pending_entry.pop(sym, None)
+                continue
+
+            if not has_bar(sym, dt):
+                # no bar today -> keep pending until next available bar
                 continue
 
             o = float(sym_data[sym].loc[dt, "open"])
@@ -166,9 +178,8 @@ def run_backtest_multi_mvp(
                 pending_entry.pop(sym, None)
                 continue
 
-            # risk sizing
-            marks_open = {s: float(sym_data[s].loc[dt, "open"]) for s in sym_data.keys()}
-            eq_open = pf.equity(marks_open)
+            # risk sizing based on equity at (dt) using last known prices
+            eq_open = eq_now
             risk_cash = eq_open * risk_per_trade
             per_unit_risk = max(exec_px - stop_price, 1e-12)
             qty = risk_cash / per_unit_risk
@@ -193,19 +204,25 @@ def run_backtest_multi_mvp(
 
             pending_entry.pop(sym, None)
 
-        # 4) generate signals (EOD) for next bar
-        if i < len(common_idx) - 1:
+        # 4) Generate signals (EOD) for next available bar of that symbol
+        # We evaluate signal only on days where the symbol has a close bar.
+        # Entries are queued and executed on the next day where the symbol has an open bar.
+        if i < len(calendar) - 1:
             for sym in sym_data.keys():
-                row = sym_data[sym].loc[dt]
-                close_p = float(row["close"])
+                if not has_bar(sym, dt):
+                    continue
 
                 # universe check on signal day
                 if allowed is not None and sym not in allowed:
                     continue
 
-                # regime off -> exit next open
+                row = sym_data[sym].loc[dt]
+                close_p = float(row["close"])
+
+                # regime off -> exit next available open for that symbol
                 if pf.has(sym) and (not bool(sym_regime[sym].loc[dt])):
-                    pending_exit_reason[sym] = "regime_off"
+                    if sym not in pending_exit_reason:
+                        pending_exit_reason[sym] = "regime_off"
 
                 # entry if flat + no pending
                 if (not pf.has(sym)) and (sym not in pending_entry):
@@ -221,7 +238,7 @@ def run_backtest_multi_mvp(
                     if cond:
                         pending_entry[sym] = {"signal_date": dt, "atr": float(atr_v)}
 
-        equity_curve.append({"date": dt, "equity": eq_now})
+        equity_curve.append({"date": dt, "equity": float(eq_now)})
 
     eq_df = pd.DataFrame(equity_curve).set_index("date")
     trades_df = pd.DataFrame(trades)

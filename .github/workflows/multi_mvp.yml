@@ -23,7 +23,7 @@ jobs:
 
       - name: Fetch crypto data
         run: |
-          python tools/fetch_crypto.py
+          python scripts/fetch_yahoo.py
 
       # NEW — build crypto monthly universe
       - name: Build crypto monthly universe

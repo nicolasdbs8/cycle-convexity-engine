@@ -18,6 +18,8 @@ Contraintes :
 
 # 2. Philosophie
 
+Principes directeurs :
+
 - aucune discrétion en live
 - règles simples et testables
 - complexité ajoutée uniquement si edge démontré
@@ -27,13 +29,11 @@ Contraintes :
 
 # 3. Architecture générale
 
-Le système suit une architecture **core / satellite**.
+Architecture **core / satellite** :
 
-
-Core ETF trend engine
-+
+Core ETF trend engine  
++  
 Satellite crypto opportuniste
-
 
 ---
 
@@ -43,7 +43,7 @@ Trend-following multi-actifs basé sur :
 
 - breakout structurel
 - filtre de régime
-- sizing volatilité
+- position sizing basé sur le risque
 - gestion du risque portefeuille
 
 ---
@@ -52,28 +52,20 @@ Trend-following multi-actifs basé sur :
 
 Breakout :
 
-
 N = 150 jours
-
 
 Sortie :
 
-
 Stop = 2.5 × ATR(20)
-
 
 Régime :
 
-
 MA52 weekly
-
 
 Gestion du risque :
 
-
-max_positions = 3
+max_positions = 3  
 risk_cap_total = 0.06
-
 
 ---
 
@@ -91,7 +83,7 @@ EEM
 GLD  
 TLT  
 IEF  
-SHY  
+SHY
 
 ---
 
@@ -107,7 +99,7 @@ XRP
 ADA  
 DOGE  
 TRX  
-LINK  
+LINK
 
 ---
 
@@ -118,14 +110,12 @@ Univers satellite :
 - recalculé mensuellement
 - basé sur momentum / liquidité
 - figé pendant le mois
-- **aucun lookahead**
+- aucun lookahead
 
 Pipeline :
 
-
-scripts/make_crypto_monthly.py
+scripts/make_crypto_monthly.py  
 → data/universe/crypto_monthly.csv
-
 
 ---
 
@@ -133,31 +123,24 @@ scripts/make_crypto_monthly.py
 
 Structure actuelle :
 
-
-core = 90 %
+core = 90 %  
 sat = 10 %
-
-
-Chaque sleeve :
-
-- exécutée indépendamment
-- equity agrégée ensuite
 
 ---
 
-# 9. Anti-biais
+# 9. Validation
 
-- paramètres ronds
-- validation sous-périodes
+Tests utilisés :
+
+- sensibilité paramètres
+- tests sous-périodes
 - Monte Carlo
 - walk-forward
 - audit anti-lookahead
 
 ---
 
-# 10. Métriques
-
-Suivies :
+# 10. Métriques suivies
 
 - CAGR
 - Max Drawdown
@@ -171,15 +154,13 @@ Suivies :
 
 Objectif final :
 
-
-Core ETF robuste
-+
-Satellite crypto opportuniste
-+
-volatility targeting
-
+Core ETF robuste  
++  
+Satellite crypto opportuniste  
++  
+gestion dynamique du risque portefeuille
 
 But :
 
 - stabilité du capital
-- convexité dans les phases de tendance.
+- convexité dans les phases de tendance

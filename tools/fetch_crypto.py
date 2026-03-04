@@ -6,6 +6,12 @@ SYMBOLS = {
     "ETH": "ETH-USD",
     "BNB": "BNB-USD",
     "SOL": "SOL-USD",
+    "XRP": "XRP-USD",
+    "ADA": "ADA-USD",
+    "DOGE": "DOGE-USD",
+    "TRX": "TRX-USD",
+    "LINK": "LINK-USD",
+    "TON": "TON-USD",
 }
 
 OUT_DIR = "data/raw"

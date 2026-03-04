@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import os
 import pandas as pd
-from typing import Iterable
 
 from .backtest_multi import run_backtest_multi_mvp
 from .config import Config
+from .universe import load_crypto_monthly_schedule, symbols_for_date
 
 
-def _split_symbols(symbols: Iterable[str], crypto_symbols: tuple[str, ...]):
+CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
+
+
+def _split_symbols(symbols, crypto_symbols: tuple[str, ...]):
     crypto_set = set(crypto_symbols)
     core = []
     sat = []
@@ -51,17 +55,14 @@ def _sum_equity(eq_core, eq_sat, init_core: float, init_sat: float) -> pd.DataFr
     return out
 
 
-def _run(panel, cfg: Config, capital_weight: float):
-    # IMPORTANT:
-    # - initial_capital scales with sleeve weight
-    # - risk_cap_total is already a FRACTION of equity, so DO NOT scale it by weight
+def _run(panel, cfg: Config, capital_weight: float, allowed_symbols_fn=None):
     return run_backtest_multi_mvp(
         panel=panel,
         fee_rate=cfg.fee_rate,
         slippage_rate=cfg.slippage_rate,
         initial_capital=cfg.initial_capital * capital_weight,
         risk_per_trade=cfg.risk_per_trade,
-        risk_cap_total=cfg.risk_cap_total,  # <-- key fix (no scaling)
+        risk_cap_total=cfg.risk_cap_total,  # do NOT scale (already fraction of equity)
         max_positions=cfg.max_positions,
         breakout_days=cfg.breakout_days,
         mom_days=cfg.mom_days,
@@ -70,21 +71,31 @@ def _run(panel, cfg: Config, capital_weight: float):
         regime_ma_weeks=cfg.regime_ma_weeks,
         regime_slope_weeks=cfg.regime_slope_weeks,
         regime_use_slope=bool(cfg.regime_use_slope),
+        allowed_symbols_fn=allowed_symbols_fn,
     )
 
 
 def run_backtest_core_satellite(panel, cfg: Config, symbols):
-    # guard rails
     assert 0 <= cfg.core_weight <= 1 and 0 <= cfg.sat_weight <= 1
     assert abs((cfg.core_weight + cfg.sat_weight) - 1.0) < 1e-9
 
     core_syms, sat_syms = _split_symbols(symbols, cfg.crypto_symbols)
 
+    # Load monthly crypto universe schedule if present
+    sched = None
+    if os.path.exists(CRYPTO_UNIVERSE_PATH):
+        sched = load_crypto_monthly_schedule(CRYPTO_UNIVERSE_PATH)
+
+    def sat_allowed(dt):
+        if sched is None:
+            return set(sat_syms)  # fallback: all sat symbols always allowed
+        return symbols_for_date(dt, sched)
+
     eq_core = None
     tr_core = None
     if core_syms:
         core_panel = _subset_panel(panel, core_syms)
-        eq_core, tr_core = _run(core_panel, cfg, cfg.core_weight)
+        eq_core, tr_core = _run(core_panel, cfg, cfg.core_weight, allowed_symbols_fn=None)
         tr_core = tr_core.copy()
         tr_core["sleeve"] = "core"
 
@@ -92,7 +103,7 @@ def run_backtest_core_satellite(panel, cfg: Config, symbols):
     tr_sat = None
     if sat_syms:
         sat_panel = _subset_panel(panel, sat_syms)
-        eq_sat, tr_sat = _run(sat_panel, cfg, cfg.sat_weight)
+        eq_sat, tr_sat = _run(sat_panel, cfg, cfg.sat_weight, allowed_symbols_fn=sat_allowed)
         tr_sat = tr_sat.copy()
         tr_sat["sleeve"] = "sat"
 

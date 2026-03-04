@@ -34,4 +34,4 @@ class Config:
     # --- Core / Satellite sleeves ---
     core_weight: float = 0.80
     sat_weight: float = 0.20
-    crypto_symbols: tuple[str, ...] = ("BTC", "ETH")
+    crypto_symbols: tuple[str, ...] = ("BTC", "ETH", "BNB", "SOL")

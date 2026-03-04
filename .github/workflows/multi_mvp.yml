@@ -42,7 +42,7 @@ jobs:
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag "test_2005_2012" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLF,XLK,XLE \
+            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLV,XLI,VNQ \
             --start 2005-01-01 \
             --end 2012-12-31
 
@@ -50,7 +50,7 @@ jobs:
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag "test_2013_2018" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLF,XLK,XLE \
+            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLV,XLI,VNQ \
             --start 2013-01-01 \
             --end 2018-12-31
 
@@ -58,7 +58,7 @@ jobs:
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag "test_2019_2026" \
-            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLF,XLK,XLE \
+            --symbols BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLV,XLI,VNQ \
             --start 2019-01-01 \
             --end 2026-03-03
 

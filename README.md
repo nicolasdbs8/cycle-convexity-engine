@@ -1,79 +1,153 @@
 # cycle-convexity-engine
 
-Architecture systématique de croissance asymétrique crypto.
+Architecture systématique de croissance asymétrique multi-actifs.
 
 ---
 
-## Objectif
+# Objectif
 
-Maximiser la croissance géométrique du capital sur 10 ans
-via une architecture multi-régime disciplinée.
+Construire un moteur de trading systématique robuste visant à maximiser la croissance géométrique du capital sur un horizon long terme.
 
-Approche :
-- 100% systématique
-- Aucune discrétion
-- Pas d’optimisation paramétrique initiale
-- Validation par robustesse avant complexité
+Contraintes :
 
----
+- approche 100 % systématique
+- aucune discrétion en live
+- robustesse prioritaire sur l’optimisation
+- architecture modulaire et auditée
+- validation hors-échantillon obligatoire
 
-## Phase actuelle
+Le projet privilégie une logique **institutionnelle** :
 
-Sprint 1 terminé :
-- MVP BTC single-asset
-- Breakout 180 jours
-- Régime MA200 weekly
-- Stop 2×ATR
-- Spot-only
-- Backtest via GitHub Actions
-
-Résultat initial (BTC 2010–2026 approx.) :
-- CAGR ≈ 18%
-- MaxDD ≈ -81%
-- 6 trades
-
-⚠️ Résultat non validé — robustesse en cours.
+- règles simples
+- validation par robustesse
+- contrôle du risque strict
+- versioning discipliné
 
 ---
 
-## Documentation projet
+# Architecture actuelle
 
-- `docs/PROJECT_SPEC.md` → Vision & architecture
-- `docs/STATE.md` → État actuel
-- `docs/SPRINT_CHECKLIST.md` → Roadmap opérationnelle
-- `docs/CHATGPT_BOOTSTRAP.md` → Reprise de session ChatGPT
+Le moteur est basé sur un **trend-following multi-actifs**.
+
+Principe :
+
+1. Détection d’un breakout structurel
+2. Filtrage par régime de marché
+3. sizing basé sur volatilité
+4. gestion du risque portefeuille
+
+Paramètres actuels :
+
+- Breakout : 150 jours
+- Stop : 2.5 × ATR(20)
+- Régime : MA52 weekly
+- Max positions : 3
+- Risk cap total : 0.06
 
 ---
 
-## Philosophie
+# Univers actuel
 
-Ce projet ne cherche pas :
+Core ETF :
+
+- SPY
+- QQQ
+- GLD
+- TLT
+- USO
+
+Crypto satellite :
+
+- BTC
+- ETH
+
+Objectif futur :
+
+- univers crypto dynamique (top N liquidité)
+
+---
+
+# Validation actuelle
+
+Tests réalisés :
+
+- sensibilité paramètres
+- audit anti-lookahead
+- Monte Carlo
+- walk-forward
+
+Walk-forward ETF (2006-2026) :
+
+- Median CAGR ≈ 7 %
+- Profit Factor toujours > 1
+- MaxDD ≈ -22 %
+
+Conclusion :
+
+le moteur présente un **edge robuste sur ETF**.
+
+---
+
+# Structure du repo
+
+
+src/
+config.py
+indicators.py
+strategy.py
+regime.py
+portfolio.py
+backtest.py
+backtest_multi.py
+data_panel.py
+
+scripts/
+audit_lookahead.py
+monte_carlo.py
+walk_forward.py
+sweep_params.py
+
+run_backtest.py
+run_backtest_multi.py
+
+
+Outputs :
+
+
+data/outputs/<tag>/
+equity_curve.csv
+trades.csv
+summary.json
+
+
+---
+
+# Philosophie du projet
+
+Le projet ne cherche pas :
+
 - un indicateur miracle
-- du scalping retail
-- de l’optimisation fragile
+- du scalping
+- une optimisation fragile
 
 Il cherche :
-- une machine disciplinée
-- robuste aux coûts
-- survivante aux cycles
-- capable de convexité en bull market
+
+- un moteur robuste
+- survivant aux cycles
+- capable de convexité dans les phases de tendance.
 
 ---
 
-## Roadmap
+# Roadmap
 
-Sprint 2 :
-- Tests robustesse paramètres
-- Sensibilité aux coûts
-- Analyse distribution drawdowns
+Sprint actuel :
 
-Sprint 3 :
-- Multi-assets (top N liquidité)
+- core ETF validé
 
-Sprint 4 :
-- Carry overlay
+Prochaines étapes :
 
-Sprint 5 :
-- Paper trading
-
----
+1. séparation core ETF / satellite crypto
+2. univers crypto dynamique (top N)
+3. filtre liquidité crypto
+4. extension walk-forward multi-actifs
+5. execution layer

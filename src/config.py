@@ -26,11 +26,11 @@ class Config:
     stop_atr_mult: float = 2.5
 
     # Risk (base)
-    risk_per_trade: float = 0.0125
+    risk_per_trade: float = 0.015
     initial_capital: float = 10_000.0
 
     # Portfolio (multi-asset)
-    max_positions: int = 3
+    max_positions: int = 6
     risk_cap_total: float = 0.06
     core_top_n: int = 12
 
@@ -45,7 +45,7 @@ class Config:
 
     # --- Volatility targeting (per sleeve) ---
     # If None: disabled for that sleeve.
-    core_target_vol_annual: float | None = 0.10
+    core_target_vol_annual: float | None = 0.15
     sat_target_vol_annual: float | None = 0.20
 
     # Realized-vol window and scaler clamps.

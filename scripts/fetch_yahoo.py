@@ -39,8 +39,16 @@ SYMBOLS = {
     "XLK": "XLK",
     "XLV": "XLV",
     "XLI": "XLI",
+    "XLY": "XLY",
+    "XLP": "XLP",
+    "XLB": "XLB",
     "VNQ": "VNQ",
     "DBC": "DBC",
+    "EWJ": "EWJ",
+    "EWU": "EWU",
+    "EWT": "EWT",
+    "FXI": "FXI",
+    "INDA": "INDA",
     
 }
 

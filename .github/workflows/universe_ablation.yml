@@ -1,0 +1,84 @@
+name: universe-ablation
+
+on:
+  workflow_dispatch:
+
+env:
+  SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLF,XLE,XLY,XLI,XLP,XLV,XLB,DBC,EWJ,EWU,FXI,EWT,INDA
+
+jobs:
+
+  ablation:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        remove:
+          - BTC
+          - ETH
+          - BNB
+          - SOL
+          - XRP
+          - ADA
+          - DOGE
+          - TRX
+          - LINK
+          - SPY
+          - QQQ
+          - IWM
+          - EFA
+          - EEM
+          - GLD
+          - TLT
+          - IEF
+          - SHY
+          - XLK
+          - XLF
+          - XLE
+          - XLY
+          - XLI
+          - XLP
+          - XLV
+          - XLB
+          - DBC
+          - EWJ
+          - EWU
+          - FXI
+          - EWT
+          - INDA
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch data
+        run: |
+          python scripts/fetch_yahoo.py
+
+      - name: Build reduced universe
+        run: |
+          SYMBOLS_REDUCED=$(echo "$SYMBOLS" | sed "s/${{ matrix.remove }}//g" | sed 's/,,/,/g' | sed 's/^,//' | sed 's/,$//')
+          echo "REDUCED=$SYMBOLS_REDUCED" >> $GITHUB_ENV
+
+      - name: Run backtest
+        run: |
+          PYTHONPATH=. python run_backtest_multi.py \
+          --tag ablation_minus_${{ matrix.remove }} \
+          --symbols "$REDUCED"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ablation_${{ matrix.remove }}
+          path: data/outputs/ablation_minus_${{ matrix.remove }}/

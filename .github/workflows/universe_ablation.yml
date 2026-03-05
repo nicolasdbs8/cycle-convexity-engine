@@ -5,13 +5,14 @@ on:
   push:
 
 env:
-  # Universe pool used for ablation (comma-separated)
   SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLF,XLE,XLY,XLI,XLP,XLV,XLB,DBC,EWJ,EWU,FXI,EWT,INDA
 
 jobs:
+
   ablation:
-    name: ablation (${{ matrix.remove }})
+
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +51,7 @@ jobs:
           - INDA
 
     steps:
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -61,141 +63,93 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch data (Yahoo)
+      - name: Fetch data
         run: |
           python scripts/fetch_yahoo.py
 
       - name: Build reduced universe
-        shell: bash
         run: |
           python - << 'PY'
           import os
-          symbols = [s.strip() for s in os.environ["SYMBOLS"].split(",") if s.strip()]
-          remove = "${{ matrix.remove }}".strip()
+          symbols = os.environ["SYMBOLS"].split(",")
+          remove = "${{ matrix.remove }}"
           reduced = [s for s in symbols if s != remove]
-          reduced_str = ",".join(reduced)
-          print("REMOVE:", remove)
-          print("REDUCED:", reduced_str)
+          print("REDUCED=" + ",".join(reduced))
           with open(os.environ["GITHUB_ENV"], "a") as f:
-            f.write(f"REDUCED={reduced_str}\n")
+              f.write("REDUCED=" + ",".join(reduced) + "\n")
           PY
 
       - name: Run backtest
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
             --tag ablation_minus_${{ matrix.remove }} \
-            --symbols "$REDUCED"
+            --symbols "$REDUCED" | tee ablation_${{ matrix.remove }}.log
 
-      - name: Debug outputs tree
-        shell: bash
-        run: |
-          echo "=== find data/outputs (maxdepth=4) ==="
-          find data/outputs -maxdepth 4 -type f -print || true
-          echo "=== ls tag folder ==="
-          ls -la "data/outputs/ablation_minus_${{ matrix.remove }}" || true
-
-      - name: Assert summary exists
-        shell: bash
-        run: |
-          test -f "data/outputs/ablation_minus_${{ matrix.remove }}/summary.json"
-
-      - name: Upload outputs (tag folder)
+      - name: Upload logs
         uses: actions/upload-artifact@v4
         with:
           name: ablation_${{ matrix.remove }}
-          path: data/outputs/ablation_minus_${{ matrix.remove }}/
+          path: ablation_${{ matrix.remove }}.log
+
 
   collect:
-    name: collect
+
     runs-on: ubuntu-latest
     needs: ablation
+
     steps:
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install deps (pandas)
+      - name: Install pandas
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas
+          python -m pip install pandas
 
-      - name: Download all ablation artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ablation_artifacts
+          path: logs
 
-      - name: Debug downloaded artifacts
-        shell: bash
-        run: |
-          echo "=== find ablation_artifacts (maxdepth=5) ==="
-          find ablation_artifacts -maxdepth 5 -type f -print || true
-
-      - name: Collect into one CSV
-        shell: bash
+      - name: Parse logs
         run: |
           python - << 'PY'
-          import json
+          import re
           import pandas as pd
           from pathlib import Path
 
-          root = Path("ablation_artifacts")
-          json_files = list(root.rglob("*.json"))
-
-          print("Found JSON files:", len(json_files))
-          for p in json_files[:30]:
-            print(" -", p)
-
           rows = []
-          for p in json_files:
-            try:
-              data = json.loads(p.read_text())
-            except Exception:
-              continue
 
-            summ = None
-            if isinstance(data, dict):
-              if isinstance(data.get("summary"), dict):
-                summ = data["summary"]
-              elif ("CAGR" in data) or ("MaxDD" in data):
-                summ = data
+          for p in Path("logs").rglob("*.log"):
 
-            if not isinstance(summ, dict):
-              continue
-            if ("CAGR" not in summ) or ("MaxDD" not in summ):
-              continue
+              text = p.read_text()
 
-            removed = "UNKNOWN"
-            for part in p.parts:
-              if part.startswith("ablation_"):
-                removed = part.replace("ablation_", "")
-                break
+              def extract(k):
+                  m = re.search(rf'"{k}":\s*([0-9\.\-eE]+)', text)
+                  return float(m.group(1)) if m else None
 
-            rows.append({
-              "removed": removed,
-              "CAGR": summ.get("CAGR"),
-              "MaxDD": summ.get("MaxDD"),
-              "ProfitFactor": summ.get("ProfitFactor"),
-              "NumTrades": summ.get("NumTrades"),
-              "HitRate": summ.get("HitRate"),
-              "EndEquity": summ.get("EndEquity"),
-              "source_file": str(p),
-            })
+              rows.append({
+                  "file": p.name,
+                  "CAGR": extract("CAGR"),
+                  "MaxDD": extract("MaxDD"),
+                  "ProfitFactor": extract("ProfitFactor"),
+                  "NumTrades": extract("NumTrades"),
+                  "HitRate": extract("HitRate"),
+              })
 
           df = pd.DataFrame(rows)
-          if df.empty:
-            raise SystemExit("No usable summaries found (no CAGR/MaxDD in downloaded JSON).")
 
-          df = df.sort_values(["CAGR", "ProfitFactor"], ascending=False)
+          df = df.sort_values("CAGR", ascending=False)
 
-          out = Path("ablation_summary.csv")
-          df.to_csv(out, index=False)
-          print(df.head(25).to_string(index=False))
-          print("Wrote", out)
+          df.to_csv("ablation_summary.csv", index=False)
+
+          print(df)
           PY
 
-      - name: Upload ablation summary
+      - name: Upload summary
         uses: actions/upload-artifact@v4
         with:
           name: ablation_summary

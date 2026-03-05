@@ -201,3 +201,21 @@ Prochaines améliorations :
 3. volatility targeting portefeuille
 4. diversification supplémentaire du core
 5. execution layer (paper trading)
+
+## Statut actuel
+
+Le moteur a passé :
+
+- tests de robustesse
+- walk-forward
+- tests de sensibilité
+- validation anti-lookahead
+
+Edge observé :
+
+CAGR ≈ 3 %
+Profit factor ≈ 1.8
+MaxDD ≈ −25 %
+
+Le moteur sert de base à une architecture core / satellite
+destinée à être amplifiée par diversification et volatility targeting.

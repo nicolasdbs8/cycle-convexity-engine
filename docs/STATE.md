@@ -134,3 +134,32 @@ Observation :
 1. position sizing par volatilité d’actif
 2. amélioration du stop ATR
 3. volatility targeting portefeuille
+
+## Tests récents
+
+Walk-forward :
+
+2005–2012
+2013–2018
+2019–2026
+
+Résultat :
+
+la stratégie survit à toutes les périodes testées.
+
+Profit factor > 1 sur la majorité des configurations.
+
+---
+
+## Position sizing
+
+Tests :
+
+risk_per_trade = 0.0075 → DD faible
+risk_per_trade = 0.01
+risk_per_trade = 0.0125
+risk_per_trade = 0.015 → performance maximale
+
+Configuration retenue :
+
+risk_per_trade = 0.015

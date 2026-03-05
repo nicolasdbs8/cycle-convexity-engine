@@ -2,6 +2,7 @@ name: core-topn-sweep
 
 on:
   workflow_dispatch:
+  push:
 
 env:
   SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLE,XLI,XLP,XLV,XLB,DBC,EWU,FXI

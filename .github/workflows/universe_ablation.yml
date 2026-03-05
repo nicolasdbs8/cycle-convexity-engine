@@ -2,6 +2,7 @@ name: universe-ablation
 
 on:
   workflow_dispatch:
+  push:
 
 env:
   # Universe pool used for ablation (comma-separated)

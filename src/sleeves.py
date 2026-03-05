@@ -13,6 +13,8 @@ from .strategy import build_signals
 
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
 CORE_UNIVERSE_PATH = "data/universe/core_monthly.csv"
+
+# Core: top-N trends (mensuel via momentum)
 CORE_TOP_N = 3
 
 
@@ -62,14 +64,18 @@ def _sum_equity(
     return out
 
 
-def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], set]:
+def _core_allowed_from_panel(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], Optional[set]]:
+    """
+    Variante "no-file": sélection top-N sur momentum calculé à la volée.
+    IMPORTANT: si pas de mom dispo à dt -> retourne None (=> pas de filtre ce jour-là).
+    """
     sig_panel: Dict[str, pd.DataFrame] = {}
     for s in core_syms:
         if s not in panel:
             continue
         sig_panel[s] = build_signals(panel[s], cfg.breakout_days, cfg.mom_days, cfg.atr_days)
 
-    def allowed(dt: pd.Timestamp) -> set:
+    def allowed(dt: pd.Timestamp) -> Optional[set]:
         moms = []
         for s, df in sig_panel.items():
             if dt not in df.index:
@@ -79,10 +85,38 @@ def _core_allowed_builder(panel: Dict[str, pd.DataFrame], core_syms: List[str], 
                 moms.append((s, float(m)))
 
         if not moms:
-            return set()
-
+            return None  # <-- clé: None = pas de filtre
         moms.sort(key=lambda x: x[1], reverse=True)
         return {s for s, _ in moms[:CORE_TOP_N]}
+
+    return allowed
+
+
+def _core_allowed_from_schedule(core_syms: List[str], core_sched) -> Callable[[pd.Timestamp], Optional[set]]:
+    """
+    Variante "file": utilise core_monthly.csv (month,symbols).
+    Si schedule vide -> retourne None (pas de filtre).
+    """
+    core_set = set(core_syms)
+
+    def allowed(dt: pd.Timestamp) -> Optional[set]:
+        if not core_sched:
+            return None
+        pick = set(symbols_for_date(dt, core_sched)).intersection(core_set)
+        # si schedule existe mais mois vide -> filtre vide = no trades core ce mois
+        return pick
+
+    return allowed
+
+
+def _sat_allowed_from_schedule(sat_syms: List[str], crypto_sched) -> Callable[[pd.Timestamp], Optional[set]]:
+    sat_set = set(sat_syms)
+
+    def allowed(dt: pd.Timestamp) -> Optional[set]:
+        if not crypto_sched:
+            return None  # pas de schedule => pas de filtre
+        pick = set(symbols_for_date(dt, crypto_sched)).intersection(sat_set)
+        return pick
 
     return allowed
 
@@ -91,7 +125,7 @@ def _run(
     panel: Dict[str, pd.DataFrame],
     cfg: Config,
     capital_weight: float,
-    allowed_symbols_fn: Optional[Callable[[pd.Timestamp], set]] = None,
+    allowed_symbols_fn: Optional[Callable[[pd.Timestamp], Optional[set]]] = None,
     vol_target_annual: Optional[float] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     return run_backtest_multi_mvp(
@@ -120,22 +154,30 @@ def _run(
 def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, symbols: List[str]):
     core_syms, sat_syms = _split_symbols(symbols, cfg.crypto_symbols)
 
-    sched = None
+    # --- schedules (robustes: si fichier vide -> {})
+    crypto_sched = {}
     if os.path.exists(CRYPTO_UNIVERSE_PATH):
-        sched = load_crypto_monthly_schedule(CRYPTO_UNIVERSE_PATH)
+        crypto_sched = load_crypto_monthly_schedule(CRYPTO_UNIVERSE_PATH)
 
-    def sat_allowed(dt: pd.Timestamp) -> set:
-        if sched is None:
-            return set(sat_syms)
-        return set(symbols_for_date(dt, sched)).intersection(set(sat_syms))
-
-    core_sched = None
+    core_sched = {}
     if os.path.exists(CORE_UNIVERSE_PATH):
-        core_sched = load_crypto_monthly_schedule(CORE_UNIVERSE_PATH)  # même loader: month/symbols
-    def core_allowed(dt: pd.Timestamp) -> set:
-        if core_sched is None:
-            return _core_allowed_builder(panel, core_syms, cfg)(dt)  # fallback ancien
-        return set(symbols_for_date(dt, core_sched)).intersection(set(core_syms))
+        core_sched = load_crypto_monthly_schedule(CORE_UNIVERSE_PATH)
+
+    # --- allowed fns
+    # Core: si schedule core existe (non vide) -> on l’utilise ; sinon fallback panel-momentum
+    core_allowed: Optional[Callable[[pd.Timestamp], Optional[set]]] = None
+    if core_syms:
+        if core_sched:
+            core_allowed = _core_allowed_from_schedule(core_syms, core_sched)
+        else:
+            core_allowed = _core_allowed_from_panel(panel, core_syms, cfg)
+
+    sat_allowed: Optional[Callable[[pd.Timestamp], Optional[set]]] = None
+    if sat_syms:
+        if crypto_sched:
+            sat_allowed = _sat_allowed_from_schedule(sat_syms, crypto_sched)
+        else:
+            sat_allowed = None  # pas de schedule => pas de filtre
 
     eq_core = tr_core = None
     if core_syms:
@@ -177,17 +219,15 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
         trades.append(tr_sat)
     tr_total = pd.concat(trades, ignore_index=True) if trades else pd.DataFrame()
 
+    # Portfolio vol targeting (si activé via cfg.*)
     ret = eq_total["equity"].pct_change()
-
     vol = ret.rolling(30).std() * np.sqrt(252)
 
-    target = 0.12
-
-    scaler = target / vol
-    scaler = scaler.clip(0.5, 1.5)
-
-    ret_adj = ret * scaler.shift(1)
-
-    eq_total["equity"] = (1 + ret_adj.fillna(0)).cumprod() * eq_total["equity"].iloc[0]
+    target = float(getattr(cfg, "portfolio_target_vol_annual", 0.0) or 0.0)
+    if target > 0:
+        scaler = target / vol
+        scaler = scaler.clip(float(cfg.vol_scaler_min), float(cfg.vol_scaler_max))
+        ret_adj = ret * scaler.shift(1)
+        eq_total["equity"] = (1 + ret_adj.fillna(0)).cumprod() * float(eq_total["equity"].iloc[0])
 
     return eq_total, tr_total, eq_core, eq_sat

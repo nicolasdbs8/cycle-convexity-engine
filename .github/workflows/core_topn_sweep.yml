@@ -1,0 +1,110 @@
+name: core-topn-sweep
+
+on:
+  workflow_dispatch:
+
+env:
+  SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLE,XLI,XLP,XLV,XLB,DBC,EWU,FXI
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        core_top_n: [3,4,5,6,7,8,10,12]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch data
+        run: |
+          python scripts/fetch_yahoo.py
+
+      - name: Run baseline
+        shell: bash
+        run: |
+          PYTHONPATH=. python run_backtest_multi.py \
+            --tag topn_${{ matrix.core_top_n }} \
+            --symbols "$SYMBOLS" \
+            --core_top_n ${{ matrix.core_top_n }} \
+            | tee topn_${{ matrix.core_top_n }}.json
+
+      - name: Upload run JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: topn_${{ matrix.core_top_n }}
+          path: topn_${{ matrix.core_top_n }}.json
+
+  collect:
+    runs-on: ubuntu-latest
+    needs: sweep
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pandas
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: topn_runs
+
+      - name: Build topn_sweep.csv
+        shell: bash
+        run: |
+          python - << 'PY'
+          import json
+          import pandas as pd
+          from pathlib import Path
+
+          rows = []
+          for p in Path("topn_runs").rglob("*.json"):
+            data = json.loads(p.read_text())
+            summ = data.get("summary", {})
+            # infer N from tag like topn_6
+            tag = data.get("tag", p.stem)
+            try:
+              n = int(str(tag).split("_")[-1])
+            except Exception:
+              n = None
+
+            rows.append({
+              "core_top_n": n,
+              "tag": tag,
+              "CAGR": summ.get("CAGR"),
+              "MaxDD": summ.get("MaxDD"),
+              "ProfitFactor": summ.get("ProfitFactor"),
+              "NumTrades": summ.get("NumTrades"),
+              "HitRate": summ.get("HitRate"),
+              "Top3_PnL_abs_pct": summ.get("Top3_PnL_abs_pct"),
+              "Top5_PnL_abs_pct": summ.get("Top5_PnL_abs_pct"),
+              "EndEquity": summ.get("EndEquity"),
+            })
+
+          df = pd.DataFrame(rows).dropna(subset=["core_top_n"])
+          df = df.sort_values(["CAGR","ProfitFactor"], ascending=False)
+          df.to_csv("topn_sweep.csv", index=False)
+          print(df.to_string(index=False))
+          PY
+
+      - name: Upload topn_sweep.csv
+        uses: actions/upload-artifact@v4
+        with:
+          name: topn_sweep
+          path: topn_sweep.csv

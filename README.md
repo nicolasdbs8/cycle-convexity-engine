@@ -37,7 +37,7 @@ Ces paramètres changent via tests; ne pas les considérer comme “définitifs�
 - Régime : MA52 weekly
 - Execution : close t -> open t+1
 - Costs : fee = 0.1% ; slippage = 0.05%
-- Risk : max_positions = 3 ; risk_cap_total = 0.06 ; risk_per_trade = 0.0125
+- Risk : max_positions = 3 ; risk_cap_total = 0.06 ; risk_per_trade = 0.015
 
 ### Core selection (momentum cross-asset)
 

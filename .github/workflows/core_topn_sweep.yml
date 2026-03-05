@@ -31,6 +31,11 @@ jobs:
         run: |
           python scripts/fetch_yahoo.py
 
+      # 👇 IMPORTANT : on désactive le schedule mensuel
+      - name: Disable core schedule
+        run: |
+          rm -f data/universe/core_monthly.csv
+
       - name: Run baseline
         shell: bash
         run: |
@@ -76,30 +81,31 @@ jobs:
 
           rows = []
           for p in Path("topn_runs").rglob("*.json"):
-            data = json.loads(p.read_text())
-            summ = data.get("summary", {})
-            # infer N from tag like topn_6
-            tag = data.get("tag", p.stem)
-            try:
-              n = int(str(tag).split("_")[-1])
-            except Exception:
-              n = None
+              data = json.loads(p.read_text())
+              summ = data.get("summary", {})
+              tag = data.get("tag", p.stem)
 
-            rows.append({
-              "core_top_n": n,
-              "tag": tag,
-              "CAGR": summ.get("CAGR"),
-              "MaxDD": summ.get("MaxDD"),
-              "ProfitFactor": summ.get("ProfitFactor"),
-              "NumTrades": summ.get("NumTrades"),
-              "HitRate": summ.get("HitRate"),
-              "Top3_PnL_abs_pct": summ.get("Top3_PnL_abs_pct"),
-              "Top5_PnL_abs_pct": summ.get("Top5_PnL_abs_pct"),
-              "EndEquity": summ.get("EndEquity"),
-            })
+              try:
+                  n = int(str(tag).split("_")[-1])
+              except:
+                  n = None
+
+              rows.append({
+                  "core_top_n": n,
+                  "tag": tag,
+                  "CAGR": summ.get("CAGR"),
+                  "MaxDD": summ.get("MaxDD"),
+                  "ProfitFactor": summ.get("ProfitFactor"),
+                  "NumTrades": summ.get("NumTrades"),
+                  "HitRate": summ.get("HitRate"),
+                  "Top3_PnL_abs_pct": summ.get("Top3_PnL_abs_pct"),
+                  "Top5_PnL_abs_pct": summ.get("Top5_PnL_abs_pct"),
+                  "EndEquity": summ.get("EndEquity"),
+              })
 
           df = pd.DataFrame(rows).dropna(subset=["core_top_n"])
           df = df.sort_values(["CAGR","ProfitFactor"], ascending=False)
+
           df.to_csv("topn_sweep.csv", index=False)
           print(df.to_string(index=False))
           PY

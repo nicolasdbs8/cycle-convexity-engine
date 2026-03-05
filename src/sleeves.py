@@ -15,7 +15,7 @@ CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
 CORE_UNIVERSE_PATH = "data/universe/core_monthly.csv"
 
 # Core: top-N trends (mensuel via momentum)
-CORE_TOP_N = 3
+CORE_TOP_N = 6
 
 
 def _split_symbols(symbols: List[str], crypto_symbols: tuple[str, ...]) -> Tuple[List[str], List[str]]:

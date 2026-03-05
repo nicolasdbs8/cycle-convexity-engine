@@ -32,6 +32,7 @@ class Config:
     # Portfolio (multi-asset)
     max_positions: int = 3
     risk_cap_total: float = 0.06
+    core_top_n: int = 6
 
     # --- Core / Satellite sleeves ---
     core_weight: float = 0.90

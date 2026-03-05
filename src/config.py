@@ -26,7 +26,7 @@ class Config:
     stop_atr_mult: float = 2.5
 
     # Risk (base)
-    risk_per_trade: float = 0.02
+    risk_per_trade: float = 0.015
     initial_capital: float = 10_000.0
 
     # Portfolio (multi-asset)

@@ -18,17 +18,28 @@ def parse_args():
 
     # Optional overrides (for controlled experiments)
     p.add_argument("--risk_per_trade", type=float, default=None)  # e.g. 0.01
+    p.add_argument("--core_top_n", type=int, default=None)        # e.g. 6
 
     return p.parse_args()
+
+
+def _replace_cfg(cfg: Config, **kwargs) -> Config:
+    """
+    Config may be frozen. dataclasses.replace works only for existing fields.
+    If a field does not exist (older Config), we silently ignore it.
+    """
+    fields = {f.name for f in dataclasses.fields(cfg)}
+    clean = {k: v for k, v in kwargs.items() if k in fields and v is not None}
+    if not clean:
+        return cfg
+    return dataclasses.replace(cfg, **clean)
 
 
 def main():
     args = parse_args()
 
     cfg = Config()
-    if args.risk_per_trade is not None:
-        # Config is frozen -> must create a new instance
-        cfg = dataclasses.replace(cfg, risk_per_trade=float(args.risk_per_trade))
+    cfg = _replace_cfg(cfg, risk_per_trade=args.risk_per_trade, core_top_n=args.core_top_n)
 
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     sym_to_path = {s: f"data/raw/{s}.csv" for s in symbols}

@@ -2,13 +2,14 @@ name: universe-ablation
 
 on:
   workflow_dispatch:
-  push:
 
 env:
+  # Universe pool used for ablation (comma-separated)
   SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLF,XLE,XLY,XLI,XLP,XLV,XLB,DBC,EWJ,EWU,FXI,EWT,INDA
 
 jobs:
   ablation:
+    name: ablation (${{ matrix.remove }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -59,7 +60,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch data
+      - name: Fetch data (Yahoo)
         run: |
           python scripts/fetch_yahoo.py
 
@@ -68,12 +69,14 @@ jobs:
         run: |
           python - << 'PY'
           import os
-          symbols = os.environ["SYMBOLS"].split(",")
-          remove = "${{ matrix.remove }}"
-          reduced = [s for s in symbols if s and s != remove]
-          print("REDUCED=" + ",".join(reduced))
+          symbols = [s.strip() for s in os.environ["SYMBOLS"].split(",") if s.strip()]
+          remove = "${{ matrix.remove }}".strip()
+          reduced = [s for s in symbols if s != remove]
+          reduced_str = ",".join(reduced)
+          print("REMOVE:", remove)
+          print("REDUCED:", reduced_str)
           with open(os.environ["GITHUB_ENV"], "a") as f:
-            f.write("REDUCED=" + ",".join(reduced) + "\n")
+            f.write(f"REDUCED={reduced_str}\n")
           PY
 
       - name: Run backtest
@@ -82,13 +85,27 @@ jobs:
             --tag ablation_minus_${{ matrix.remove }} \
             --symbols "$REDUCED"
 
-      - name: Upload summary.json only (fast)
+      - name: Debug outputs tree
+        shell: bash
+        run: |
+          echo "=== find data/outputs (maxdepth=4) ==="
+          find data/outputs -maxdepth 4 -type f -print || true
+          echo "=== ls tag folder ==="
+          ls -la "data/outputs/ablation_minus_${{ matrix.remove }}" || true
+
+      - name: Assert summary exists
+        shell: bash
+        run: |
+          test -f "data/outputs/ablation_minus_${{ matrix.remove }}/summary.json"
+
+      - name: Upload outputs (tag folder)
         uses: actions/upload-artifact@v4
         with:
           name: ablation_${{ matrix.remove }}
-          path: data/outputs/ablation_minus_${{ matrix.remove }}/summary.json
+          path: data/outputs/ablation_minus_${{ matrix.remove }}/
 
   collect:
+    name: collect
     runs-on: ubuntu-latest
     needs: ablation
     steps:
@@ -108,6 +125,12 @@ jobs:
         with:
           path: ablation_artifacts
 
+      - name: Debug downloaded artifacts
+        shell: bash
+        run: |
+          echo "=== find ablation_artifacts (maxdepth=5) ==="
+          find ablation_artifacts -maxdepth 5 -type f -print || true
+
       - name: Collect into one CSV
         shell: bash
         run: |
@@ -117,37 +140,57 @@ jobs:
           from pathlib import Path
 
           root = Path("ablation_artifacts")
+          json_files = list(root.rglob("*.json"))
+
+          print("Found JSON files:", len(json_files))
+          for p in json_files[:30]:
+            print(" -", p)
+
           rows = []
-          for p in root.rglob("summary.json"):
-            # p parent name like ablation_BTC or nested; we infer removed from path parts
-            # artifact folder usually root/<artifact_name>/summary.json
-            parts = p.parts
-            removed = None
-            for part in parts:
+          for p in json_files:
+            try:
+              data = json.loads(p.read_text())
+            except Exception:
+              continue
+
+            summ = None
+            if isinstance(data, dict):
+              if isinstance(data.get("summary"), dict):
+                summ = data["summary"]
+              elif ("CAGR" in data) or ("MaxDD" in data):
+                summ = data
+
+            if not isinstance(summ, dict):
+              continue
+            if ("CAGR" not in summ) or ("MaxDD" not in summ):
+              continue
+
+            removed = "UNKNOWN"
+            for part in p.parts:
               if part.startswith("ablation_"):
                 removed = part.replace("ablation_", "")
                 break
-            with open(p) as f:
-              data = json.load(f)
-            summ = data.get("summary", data)  # tolerate both shapes
+
             rows.append({
-              "removed": removed or "UNKNOWN",
+              "removed": removed,
               "CAGR": summ.get("CAGR"),
               "MaxDD": summ.get("MaxDD"),
               "ProfitFactor": summ.get("ProfitFactor"),
               "NumTrades": summ.get("NumTrades"),
               "HitRate": summ.get("HitRate"),
               "EndEquity": summ.get("EndEquity"),
+              "source_file": str(p),
             })
 
           df = pd.DataFrame(rows)
           if df.empty:
-            raise SystemExit("No summary.json found in downloaded artifacts")
+            raise SystemExit("No usable summaries found (no CAGR/MaxDD in downloaded JSON).")
 
-          df = df.sort_values(["CAGR","ProfitFactor"], ascending=False)
+          df = df.sort_values(["CAGR", "ProfitFactor"], ascending=False)
+
           out = Path("ablation_summary.csv")
           df.to_csv(out, index=False)
-          print(df.head(20).to_string(index=False))
+          print(df.head(25).to_string(index=False))
           print("Wrote", out)
           PY
 

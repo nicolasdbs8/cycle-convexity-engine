@@ -118,3 +118,84 @@ Satellite crypto opportuniste
 2. amélioration exit ATR
 3. volatility targeting portefeuille
 4. diversification core
+
+# Résultats récents (v0.4)
+
+Configuration :
+
+Breakout : 150 jours
+Stop : 2.5 × ATR(20)
+Régime : MA52 weekly
+Max positions : 3
+Risk cap total : 0.06
+
+Univers :
+
+Core ETF
++ satellite crypto dynamique
+
+---
+
+## Backtest global
+
+CAGR ≈ 3.1 %
+MaxDD ≈ −25 %
+Profit Factor ≈ 1.8
+Trades ≈ 155
+
+Observation :
+
+edge structurel de trend following
+distribution de gains saine (Top5 ≈ 30 %)
+
+---
+
+## Walk-forward
+
+2005–2012
+
+CAGR ≈ 0.5 %
+MaxDD ≈ −20 %
+
+Observation :
+edge faible mais stratégie survivante.
+
+---
+
+2013–2018
+
+CAGR ≈ 0 %
+MaxDD ≈ −16 %
+
+Observation :
+période défavorable au trend following.
+
+---
+
+2019–2026
+
+CAGR ≈ 5.8 %
+MaxDD ≈ −18 %
+
+Observation :
+forte capture des tendances récentes.
+
+---
+
+## Test position sizing
+
+Risk per trade testé :
+
+0.0075
+0.01
+0.0125
+0.015
+
+Conclusion :
+
+l’edge est stable.
+le sizing agit surtout sur la volatilité et le drawdown.
+
+Configuration retenue :
+
+risk_per_trade = 0.015

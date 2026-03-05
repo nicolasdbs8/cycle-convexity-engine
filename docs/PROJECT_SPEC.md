@@ -1,179 +1,70 @@
-# cycle-convexity-engine
-## Architecture systématique de croissance asymétrique multi-actifs
+# PROJECT_SPEC — cycle-convexity-engine
 
----
-
-# 1. Objectif
-
-Maximiser la croissance géométrique du capital sur un horizon long terme.
+## 1) Objectif
+Maximiser la croissance géométrique du capital long-terme avec un moteur robuste, modulaire et auditable.
 
 Contraintes :
+- 100% systématique (aucune discrétion live)
+- règles simples, testables, versionnées
+- validation hors-échantillon obligatoire
+- robustesse > optimisation fragile
 
-- risque de ruine exclu
-- drawdowns acceptés mais contrôlés
-- approche entièrement systématique
-- validation hors échantillon obligatoire
+## 2) Architecture
+Core / Satellite
+- Core : ETF trend engine (macro, stabilisateur)
+- Satellite : crypto opportuniste (convexité, optionnel)
 
----
-
-# 2. Philosophie
-
-Principes directeurs :
-
-- aucune discrétion en live
-- règles simples et testables
-- complexité ajoutée uniquement si edge démontré
-- priorité à la robustesse
-
----
-
-# 3. Architecture générale
-
-Architecture **core / satellite** :
-
-Core ETF trend engine  
-+  
-Satellite crypto opportuniste
-
-Core selection layer
-
-Le core peut être filtré par :
-
-- sélection mensuelle des actifs
-- ranking momentum cross-asset
-- limitation aux meilleurs trends
-
-Objectif :
-
-réduire le bruit
-et concentrer le risque sur les tendances dominantes.
-
----
-
-# 4. Core Trend Engine
-
-Trend-following multi-actifs basé sur :
-
+## 3) Signal (concept)
+Trend-following :
 - breakout structurel
 - filtre de régime
-- position sizing basé sur le risque
-- gestion du risque portefeuille
+- sizing basé sur le risque
+- risk caps portefeuille
 
----
+Exécution :
+- signal sur close[t]
+- entry sur open[t+1]
+- coûts sur chaque entrée/sortie
 
-# 5. Paramètres principaux
+## 4) Sélection d’univers
 
-Breakout :
+### Crypto (satellite)
+- univers mensuel recalculé
+- figé dans le mois (anti-lookahead)
+- output: data/universe/crypto_monthly.csv
 
-N = 150 jours
+### Core (ETF)
+Deux modes :
+1) schedule (fichier) : data/universe/core_monthly.csv
+2) dynamic (calcul on-the-fly) : ranking momentum depuis le panel
 
-Sortie :
+Paramètre :
+- core_top_n : nombre d’actifs autorisés par période (si mode dynamic)
 
-Stop = 2.5 × ATR(20)
-
-Régime :
-
-MA52 weekly
-
-Gestion du risque :
-
-max_positions = 3  
-risk_cap_total = 0.06
-
----
-
-# 6. Univers
-
-## Core
-
-ETF macro liquides :
-
-SPY  
-QQQ  
-IWM  
-EFA  
-EEM  
-GLD  
-TLT  
-IEF  
-SHY
-
----
-
-## Satellite
-
-Crypto large caps :
-
-BTC  
-ETH  
-BNB  
-SOL  
-XRP  
-ADA  
-DOGE  
-TRX  
-LINK
-
----
-
-# 7. Univers dynamique crypto
-
-Univers satellite :
-
-- recalculé mensuellement
-- basé sur momentum / liquidité
-- figé pendant le mois
-- aucun lookahead
-
-Pipeline :
-
-scripts/make_crypto_monthly.py  
-→ data/universe/crypto_monthly.csv
-
----
-
-# 8. Allocation portefeuille
-
-Structure actuelle :
-
-core = 90 %  
-sat = 10 %
-
----
-
-# 9. Validation
-
-Tests utilisés :
-
-- sensibilité paramètres
-- tests sous-périodes
-- Monte Carlo
+## 5) Validation & protocole
+- backtest global
 - walk-forward
+- sensitivity tests (param sweeps)
+- Monte Carlo (stress)
 - audit anti-lookahead
 
----
-
-# 10. Métriques suivies
-
+## 6) Mesures suivies
 - CAGR
-- Max Drawdown
+- MaxDD
 - Profit Factor
-- nombre de trades
-- distribution Monte Carlo
+- NumTrades
+- distribution des gains (Top1/Top3/Top5)
+- stabilité par segments WF
 
----
+## 7) Critères de succès (phase core-only)
+- PF > 1.2 global + non catastrophique sur segments WF
+- DD contrôlé et stable
+- pas d’edge “single-period only”
+- protocole reproductible et automatisé via Actions
 
-# 11. Architecture cible
-
-Objectif final :
-
-Core ETF robuste  
-+  
-Satellite crypto opportuniste  
-+  
-gestion dynamique du risque portefeuille
-
-But :
-
-- stabilité du capital
-- convexité dans les phases de tendance
+## 8) Phase suivante (une fois core stable)
+- forward universe selection (out-of-sample)
+- amélioration exits
+- volatility targeting portefeuille
+- paper trading
+- réintégration satellite crypto (avec garde-fous)

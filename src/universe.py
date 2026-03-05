@@ -1,45 +1,67 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
 import pandas as pd
 
 
-def load_crypto_monthly_schedule(path: str) -> pd.DataFrame:
+MonthlySchedule = Dict[pd.Timestamp, List[str]]
+
+
+def load_crypto_monthly_schedule(path: str) -> MonthlySchedule:
     """
-    CSV format:
+    CSV attendu:
       month,symbols
-      2017-11-01,BTC;ETH
-      2017-12-01,BTC;ETH;SOL
-
-    Returns a DataFrame with:
-      - month: pd.Timestamp (start of month)
-      - symbols: list[str]
+    où:
+      - month: YYYY-MM-DD (début de mois)
+      - symbols: "BTC,ETH,SOL" (string)
+    Retour:
+      dict {Timestamp(month)->[symbols]}
+    Robustesse:
+      - si fichier absent / vide (0 octet) / illisible -> retourne {}
     """
-    df = pd.read_csv(path)
-    if "month" not in df.columns or "symbols" not in df.columns:
-        raise ValueError("crypto_monthly.csv must have columns: month,symbols")
+    try:
+        df = pd.read_csv(path)
+    except FileNotFoundError:
+        return {}
+    except pd.errors.EmptyDataError:
+        # Fichier 0 octet -> pas de schedule disponible
+        return {}
 
-    df["month"] = pd.to_datetime(df["month"]).dt.to_period("M").dt.to_timestamp()
-    df["symbols"] = df["symbols"].fillna("").astype(str).apply(
-        lambda s: [x.strip().upper() for x in s.split(";") if x.strip()]
-    )
-    df = df.sort_values("month").reset_index(drop=True)
-    return df
+    if df.empty:
+        return {}
+
+    # Tolérance: "date" ou "month"
+    if "month" in df.columns:
+        month_col = "month"
+    elif "date" in df.columns:
+        month_col = "date"
+    else:
+        raise ValueError(f"{path}: missing 'month' (or 'date') column")
+
+    if "symbols" not in df.columns:
+        raise ValueError(f"{path}: missing 'symbols' column")
+
+    out: MonthlySchedule = {}
+    for _, row in df.iterrows():
+        m = pd.to_datetime(row[month_col], utc=False).normalize()
+        raw = str(row["symbols"]) if pd.notna(row["symbols"]) else ""
+        syms = [s.strip() for s in raw.split(",") if s.strip()]
+        out[m] = syms
+
+    return out
 
 
-def symbols_for_date(dt: pd.Timestamp, schedule_df: pd.DataFrame) -> set[str]:
+def symbols_for_date(dt: pd.Timestamp, sched: MonthlySchedule) -> List[str]:
     """
-    For date dt, returns the latest schedule row with month <= dt's month start.
-    Forward-fills the last known schedule.
+    Renvoie la liste de symboles active pour le mois de dt.
+    Si pas trouvé -> [].
     """
-    if schedule_df is None or schedule_df.empty:
-        return set()
+    if not sched:
+        return []
 
-    dt = pd.Timestamp(dt)
-    month = dt.to_period("M").to_timestamp()
-
-    # last row where month <= current month
-    mask = schedule_df["month"] <= month
-    if not mask.any():
-        # if schedule starts after dt, use first row
-        return set(schedule_df.loc[0, "symbols"])
-
-    row = schedule_df.loc[mask].iloc[-1]
-    return set(row["symbols"])
+    d = pd.Timestamp(dt).normalize()
+    # On prend le "month start"
+    month = pd.Timestamp(year=d.year, month=d.month, day=1)
+    return list(sched.get(month, []))

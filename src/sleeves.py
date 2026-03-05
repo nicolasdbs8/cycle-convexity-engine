@@ -87,7 +87,7 @@ def _core_allowed_from_panel(
                 moms.append((s, float(m)))
 
         if not moms:
-            return None  # None = pas de filtre ce jour-là
+            return set()  # None = pas de filtre ce jour-là
         moms.sort(key=lambda x: x[1], reverse=True)
         return {s for s, _ in moms[: int(top_n)]}
 

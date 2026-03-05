@@ -14,9 +14,6 @@ from .strategy import build_signals
 CRYPTO_UNIVERSE_PATH = "data/universe/crypto_monthly.csv"
 CORE_UNIVERSE_PATH = "data/universe/core_monthly.csv"
 
-# Core: top-N trends (mensuel via momentum)
-CORE_TOP_N = 6
-
 
 def _split_symbols(symbols: List[str], crypto_symbols: tuple[str, ...]) -> Tuple[List[str], List[str]]:
     crypto = set(crypto_symbols)
@@ -64,7 +61,12 @@ def _sum_equity(
     return out
 
 
-def _core_allowed_from_panel(panel: Dict[str, pd.DataFrame], core_syms: List[str], cfg: Config) -> Callable[[pd.Timestamp], Optional[set]]:
+def _core_allowed_from_panel(
+    panel: Dict[str, pd.DataFrame],
+    core_syms: List[str],
+    cfg: Config,
+    top_n: int,
+) -> Callable[[pd.Timestamp], Optional[set]]:
     """
     Variante "no-file": sélection top-N sur momentum calculé à la volée.
     IMPORTANT: si pas de mom dispo à dt -> retourne None (=> pas de filtre ce jour-là).
@@ -85,9 +87,9 @@ def _core_allowed_from_panel(panel: Dict[str, pd.DataFrame], core_syms: List[str
                 moms.append((s, float(m)))
 
         if not moms:
-            return None  # <-- clé: None = pas de filtre
+            return None  # None = pas de filtre ce jour-là
         moms.sort(key=lambda x: x[1], reverse=True)
-        return {s for s, _ in moms[:CORE_TOP_N]}
+        return {s for s, _ in moms[: int(top_n)]}
 
     return allowed
 
@@ -103,7 +105,6 @@ def _core_allowed_from_schedule(core_syms: List[str], core_sched) -> Callable[[p
         if not core_sched:
             return None
         pick = set(symbols_for_date(dt, core_sched)).intersection(core_set)
-        # si schedule existe mais mois vide -> filtre vide = no trades core ce mois
         return pick
 
     return allowed
@@ -114,7 +115,7 @@ def _sat_allowed_from_schedule(sat_syms: List[str], crypto_sched) -> Callable[[p
 
     def allowed(dt: pd.Timestamp) -> Optional[set]:
         if not crypto_sched:
-            return None  # pas de schedule => pas de filtre
+            return None
         pick = set(symbols_for_date(dt, crypto_sched)).intersection(sat_set)
         return pick
 
@@ -154,7 +155,12 @@ def _run(
 def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, symbols: List[str]):
     core_syms, sat_syms = _split_symbols(symbols, cfg.crypto_symbols)
 
-    # --- schedules (robustes: si fichier vide -> {})
+    # Top-N configurable (fallback: 6)
+    top_n = int(getattr(cfg, "core_top_n", 6))
+    if top_n <= 0:
+        top_n = 1
+
+    # --- schedules
     crypto_sched = {}
     if os.path.exists(CRYPTO_UNIVERSE_PATH):
         crypto_sched = load_crypto_monthly_schedule(CRYPTO_UNIVERSE_PATH)
@@ -164,20 +170,19 @@ def run_backtest_core_satellite(panel: Dict[str, pd.DataFrame], cfg: Config, sym
         core_sched = load_crypto_monthly_schedule(CORE_UNIVERSE_PATH)
 
     # --- allowed fns
-    # Core: si schedule core existe (non vide) -> on l’utilise ; sinon fallback panel-momentum
     core_allowed: Optional[Callable[[pd.Timestamp], Optional[set]]] = None
     if core_syms:
         if core_sched:
             core_allowed = _core_allowed_from_schedule(core_syms, core_sched)
         else:
-            core_allowed = _core_allowed_from_panel(panel, core_syms, cfg)
+            core_allowed = _core_allowed_from_panel(panel, core_syms, cfg, top_n)
 
     sat_allowed: Optional[Callable[[pd.Timestamp], Optional[set]]] = None
     if sat_syms:
         if crypto_sched:
             sat_allowed = _sat_allowed_from_schedule(sat_syms, crypto_sched)
         else:
-            sat_allowed = None  # pas de schedule => pas de filtre
+            sat_allowed = None
 
     eq_core = tr_core = None
     if core_syms:

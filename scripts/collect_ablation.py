@@ -17,18 +17,26 @@ for d in OUTPUT.iterdir():
         continue
 
     with open(summary_file) as f:
-        s = json.load(f)
+        data = json.load(f)
+
+    summary = data.get("summary", {})
+
+    if not summary:
+        continue
 
     rows.append({
         "tag": d.name,
-        "CAGR": s.get("CAGR"),
-        "MaxDD": s.get("MaxDD"),
-        "ProfitFactor": s.get("ProfitFactor"),
-        "NumTrades": s.get("NumTrades"),
-        "HitRate": s.get("HitRate"),
+        "CAGR": summary.get("CAGR"),
+        "MaxDD": summary.get("MaxDD"),
+        "ProfitFactor": summary.get("ProfitFactor"),
+        "NumTrades": summary.get("NumTrades"),
+        "HitRate": summary.get("HitRate"),
     })
 
 df = pd.DataFrame(rows)
+
+if df.empty:
+    raise ValueError("No summaries found in data/outputs")
 
 df = df.sort_values("CAGR", ascending=False)
 

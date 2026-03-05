@@ -1,212 +1,260 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import os
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 
 DEFAULT_CANDIDATES = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "TON", "LINK"]
 
 
-@dataclass
-class SymSeries:
-    sym: str
-    df: pd.DataFrame  # indexed by date
+@dataclass(frozen=True)
+class Row:
+    date: pd.Timestamp
+    symbols: List[str]
 
 
-def _read_ohlcv(path: str) -> pd.DataFrame:
-    # This handles Yahoo-style exports like:
+def _warn(msg: str) -> None:
+    print(f"[warn] {msg}")
+
+
+def _read_ohlcv(path: str) -> Optional[pd.DataFrame]:
+    """
+    Accepts either:
+      - "normal" schema: date,open,high,low,close,adj_close,volume
+      - yfinance "weird" schema (multi header like Price/Ticker/Date rows)
+
+    Returns None if file missing/empty/unreadable.
+    """
+    if not os.path.exists(path):
+        return None
+
+    # Empty file => EmptyDataError
+    try:
+        df0 = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        _warn(f"{path}: empty csv (skipped)")
+        return None
+    except Exception as e:
+        _warn(f"{path}: read failed ({e}) (skipped)")
+        return None
+
+    if df0 is None or df0.empty:
+        _warn(f"{path}: no rows (skipped)")
+        return None
+
+    cols = [c.lower().strip() for c in df0.columns]
+
+    # Normal case: has date column
+    if "date" in cols:
+        df = df0.copy()
+        # normalize column names
+        df.columns = [c.lower().strip() for c in df.columns]
+        if "adj close" in df.columns and "adj_close" not in df.columns:
+            df = df.rename(columns={"adj close": "adj_close"})
+        if "adj_close" not in df.columns:
+            df["adj_close"] = np.nan
+        if "volume" not in df.columns:
+            df["volume"] = np.nan
+
+        df["date"] = pd.to_datetime(df["date"], errors="coerce", utc=True).dt.tz_convert(None)
+        df = df.dropna(subset=["date"]).set_index("date").sort_index()
+
+        # required columns
+        for c in ["open", "high", "low", "close"]:
+            if c not in df.columns:
+                _warn(f"{path}: missing '{c}' column (skipped)")
+                return None
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+        df = df.dropna(subset=["close"])
+        if df.empty:
+            _warn(f"{path}: no valid close after cleaning (skipped)")
+            return None
+        return df
+
+    # Weird yfinance export with rows like:
     # Price,Open,High,Low,Close
-    # Ticker,BTC-USD,BTC-USD,BTC-USD,BTC-USD
+    # Ticker,BTC-USD,BTC-USD,...
     # Date,,,,
-    # 2014-09-17,465.86,468.17,452.42,457.33
-    df = pd.read_csv(path, header=None)
+    # 2014-..., 465..., ...
+    # We try: read with header=None then locate a "Date" row and re-read.
+    try:
+        raw = pd.read_csv(path, header=None)
+    except pd.errors.EmptyDataError:
+        _warn(f"{path}: empty csv (skipped)")
+        return None
+    except Exception as e:
+        _warn(f"{path}: read failed ({e}) (skipped)")
+        return None
 
-    if df.shape[1] < 5:
-        raise ValueError(f"{path}: expected at least 5 columns")
+    if raw.empty:
+        _warn(f"{path}: empty csv (skipped)")
+        return None
 
-    # Drop the first 3 rows (metadata), keep the rest as data
-    df = df.iloc[3:].copy()
-    df.columns = ["date", "open", "high", "low", "close"] + [f"col_{i}" for i in range(5, df.shape[1])]
+    # find the row where first cell == "Date"
+    date_row_idx = None
+    for i in range(min(len(raw), 10)):
+        v = str(raw.iloc[i, 0]).strip().lower()
+        if v == "date":
+            date_row_idx = i
+            break
 
-    # Coerce types
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    if date_row_idx is None:
+        _warn(f"{path}: cannot find Date row (skipped)")
+        return None
+
+    # Now re-read starting from that row as header
+    try:
+        df = pd.read_csv(path, skiprows=date_row_idx)
+    except pd.errors.EmptyDataError:
+        _warn(f"{path}: no data after Date row (skipped)")
+        return None
+    except Exception as e:
+        _warn(f"{path}: read failed after Date row ({e}) (skipped)")
+        return None
+
+    df.columns = [c.lower().strip() for c in df.columns]
+    if "date" not in df.columns:
+        _warn(f"{path}: missing date column after normalize (skipped)")
+        return None
+
     for c in ["open", "high", "low", "close"]:
+        if c not in df.columns:
+            _warn(f"{path}: missing '{c}' column (skipped)")
+            return None
+
+    if "volume" not in df.columns:
+        df["volume"] = np.nan
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce", utc=True).dt.tz_convert(None)
+    df = df.dropna(subset=["date"]).set_index("date").sort_index()
+
+    for c in ["open", "high", "low", "close", "volume"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Optional volume if present
-    if "col_5" in df.columns:
-        # if the 6th column is volume in your exports, rename it
-        # (if not, it will just be ignored later)
-        df.rename(columns={"col_5": "volume"}, inplace=True)
-        df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
-
-    df = df.dropna(subset=["date", "open", "high", "low", "close"])
-    df = df.sort_values("date").drop_duplicates("date").set_index("date")
-
+    df = df.dropna(subset=["close"])
+    if df.empty:
+        _warn(f"{path}: no valid close after cleaning (skipped)")
+        return None
     return df
 
 
-def _last_date_before(df: pd.DataFrame, dt: pd.Timestamp) -> pd.Timestamp | None:
-    idx = df.index[df.index < dt]
-    if len(idx) == 0:
-        return None
-    return idx[-1]
+def _month_ends(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    # month-end dates present in idx
+    s = pd.Series(index=idx, data=1)
+    return s.resample("M").last().index
 
 
-def _momentum_asof(df: pd.DataFrame, asof: pd.Timestamp, lookback_bars: int) -> float | None:
-    sub = df.loc[:asof]
-    if len(sub) <= lookback_bars:
-        return None
-    close_now = float(sub["close"].iloc[-1])
-    close_then = float(sub["close"].iloc[-1 - lookback_bars])
-    if close_then <= 0:
-        return None
-    return (close_now / close_then) - 1.0
+def _compute_mom(close: pd.Series, mom_bars: int) -> pd.Series:
+    # simple momentum: close / close.shift(mom_bars) - 1
+    return close / close.shift(mom_bars) - 1.0
 
 
-def _liquidity_ok_asof(
-    df: pd.DataFrame,
-    asof: pd.Timestamp,
-    window_bars: int,
-    min_median_dvol_usd: float,
-) -> bool:
-    """
-    Dollar-volume proxy: close * volume.
-    Uses median over last window_bars ending at asof (inclusive).
-    Anti-lookahead: only uses data <= asof.
-    If min_median_dvol_usd == 0, liquidity filter is disabled (always True).
-    """
-    if min_median_dvol_usd == 0:
-        return True
-
-    if "volume" not in df.columns:
-        return False
-
-    sub = df.loc[:asof]
-    if len(sub) < window_bars:
-        return False
-
-    tail = sub.iloc[-window_bars:]
-    vol = pd.to_numeric(tail["volume"], errors="coerce")
-    close = pd.to_numeric(tail["close"], errors="coerce")
-    dvol = close * vol
-
-    med = float(dvol.median(skipna=True)) if dvol.notna().any() else float("nan")
-    if not (med == med):  # NaN check
-        return False
-    return med >= float(min_median_dvol_usd)
-
-
-def _month_starts(min_dt: pd.Timestamp, max_dt: pd.Timestamp) -> List[pd.Timestamp]:
-    start = min_dt.to_period("M").to_timestamp()
-    end = max_dt.to_period("M").to_timestamp()
-    months = pd.date_range(start=start, end=end, freq="MS")
-    return [pd.Timestamp(x) for x in months]
-
-
-def build_crypto_monthly_schedule(
-    series: List[SymSeries],
+def build_schedule(
+    panels: Dict[str, pd.DataFrame],
     n: int,
     mom_bars: int,
-    liq_window_bars: int,
-    min_median_dvol_usd: float,
-) -> pd.DataFrame:
-    min_dt = min(s.df.index.min() for s in series)
-    max_dt = max(s.df.index.max() for s in series)
-    months = _month_starts(min_dt, max_dt)
+    min_dvol_usd: float,
+) -> List[Row]:
+    # Determine common month-ends across all panels (union)
+    all_idx = None
+    for df in panels.values():
+        all_idx = df.index if all_idx is None else all_idx.union(df.index)
+    if all_idx is None:
+        return []
 
-    rows = []
-    last_symbols: List[str] = []
+    month_ends = _month_ends(all_idx.sort_values())
 
-    for m in months:
-        scores: List[Tuple[str, float]] = []
-
-        for s in series:
-            asof = _last_date_before(s.df, m)  # end of previous month
-            if asof is None:
+    rows: List[Row] = []
+    for dt in month_ends:
+        scored: List[Tuple[str, float]] = []
+        for sym, df in panels.items():
+            if dt not in df.index:
                 continue
 
-            if not _liquidity_ok_asof(s.df, asof, liq_window_bars, min_median_dvol_usd):
+            close = df["close"]
+            mom = _compute_mom(close, mom_bars)
+            m = mom.loc[dt] if dt in mom.index else np.nan
+            if pd.isna(m):
                 continue
 
-            mom = _momentum_asof(s.df, asof, mom_bars)
-            if mom is None:
-                continue
+            # liquidity filter: use last 20 bars avg dollar volume if possible
+            if min_dvol_usd > 0 and "volume" in df.columns and df["volume"].notna().any():
+                dv = (df["close"] * df["volume"]).rolling(20).mean()
+                d = dv.loc[dt] if dt in dv.index else np.nan
+                if pd.isna(d) or float(d) < float(min_dvol_usd):
+                    continue
 
-            scores.append((s.sym, mom))
+            scored.append((sym, float(m)))
 
-        if len(scores) == 0:
-            picked = last_symbols
-        else:
-            scores.sort(key=lambda x: x[1], reverse=True)
-            picked = [sym for sym, _ in scores[:n]]
-            last_symbols = picked
+        if not scored:
+            rows.append(Row(date=dt, symbols=[]))
+            continue
 
-        rows.append({"month": m.strftime("%Y-%m-%d"), "symbols": ";".join(picked)})
+        scored.sort(key=lambda x: x[1], reverse=True)
+        picked = [s for s, _ in scored[: int(n)]]
+        rows.append(Row(date=dt, symbols=picked))
 
-    return pd.DataFrame(rows)
-
-
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--raw_dir", type=str, default="data/raw")
-    p.add_argument("--candidates", type=str, default=",".join(DEFAULT_CANDIDATES))
-    p.add_argument("--n", type=int, default=3)
-    p.add_argument("--mom_bars", type=int, default=180)
-
-    p.add_argument("--liq_window_bars", type=int, default=30)
-    p.add_argument("--min_dvol_usd", type=float, default=10_000_000.0)  # set to 0 to disable
-
-    p.add_argument("--out", type=str, default="data/universe/crypto_monthly.csv")
-    return p.parse_args()
+    return rows
 
 
-def main():
-    args = parse_args()
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n", type=int, required=True)
+    ap.add_argument("--mom_bars", type=int, default=180)
+    ap.add_argument("--min_dvol_usd", type=float, default=0.0)
+    ap.add_argument("--candidates", type=str, default=",".join(DEFAULT_CANDIDATES))
+    ap.add_argument("--in_dir", type=str, default="data/raw")
+    ap.add_argument("--out", type=str, default="data/universe/crypto_monthly.csv")
+    args = ap.parse_args()
 
-    cands = [x.strip().upper() for x in args.candidates.split(",") if x.strip()]
     if args.n <= 0:
         raise ValueError("--n must be > 0")
     if args.mom_bars <= 0:
         raise ValueError("--mom_bars must be > 0")
-    if args.liq_window_bars <= 0:
-        raise ValueError("--liq_window_bars must be > 0")
     if args.min_dvol_usd < 0:
-        raise ValueError("--min_dvol_usd must be >= 0 (use 0 to disable liquidity filter)")
+        raise ValueError("--min_dvol_usd must be >= 0")
 
-    series: List[SymSeries] = []
+    cands = [s.strip().upper() for s in args.candidates.split(",") if s.strip()]
     missing = []
-    no_volume = []
+    panels: Dict[str, pd.DataFrame] = {}
 
     for sym in cands:
-        path = os.path.join(args.raw_dir, f"{sym}.csv")
-        if not os.path.exists(path):
+        path = os.path.join(args.in_dir, f"{sym}.csv")
+        df = _read_ohlcv(path)
+        if df is None:
             missing.append(sym)
             continue
-        df = _read_ohlcv(path)
-        if "volume" not in df.columns:
-            no_volume.append(sym)
-        series.append(SymSeries(sym=sym, df=df))
-
-    if len(series) == 0:
-        raise RuntimeError("No candidate CSVs found. Add data/raw/<SYMBOL>.csv first.")
+        panels[sym] = df
 
     if missing:
-        print("[warn] missing CSVs for:", ",".join(missing))
-    if no_volume:
-        if args.min_dvol_usd > 0:
-            print("[warn] CSVs missing 'volume' (will fail liquidity gate):", ",".join(no_volume))
-        else:
-            print("[warn] CSVs missing 'volume' (liquidity filter disabled):", ",".join(no_volume))
+        _warn(f"missing/invalid CSVs for: {','.join(missing)}")
 
-    out_df = build_crypto_monthly_schedule(
-        series=series,
-        n=args.n,
-        mom_bars=args.mom_bars,
-        liq_window_bars=args.liq_window_bars,
-        min_median_dvol_usd=args.min_dvol_usd,
+    if not panels:
+        _warn("no valid crypto panels. Writing empty schedule.")
+        os.makedirs(os.path.dirname(args.out), exist_ok=True)
+        pd.DataFrame({"date": [], "symbols": []}).to_csv(args.out, index=False)
+        print(f"Wrote: {args.out} (rows=0)")
+        return
+
+    # warn if volume missing (liquidity filter becomes partial)
+    no_vol = [s for s, df in panels.items() if "volume" not in df.columns or df["volume"].isna().all()]
+    if no_vol and args.min_dvol_usd > 0:
+        _warn(f"CSVs missing 'volume' (liquidity filter may skip less): {','.join(no_vol)}")
+
+    rows = build_schedule(panels, args.n, args.mom_bars, args.min_dvol_usd)
+    out_df = pd.DataFrame(
+        {
+            "date": [r.date.strftime("%Y-%m-%d") for r in rows],
+            "symbols": [",".join(r.symbols) for r in rows],
+        }
     )
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

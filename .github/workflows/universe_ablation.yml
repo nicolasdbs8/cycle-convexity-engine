@@ -2,17 +2,13 @@ name: universe-ablation
 
 on:
   workflow_dispatch:
-  push:
 
 env:
   SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLF,XLE,XLY,XLI,XLP,XLV,XLB,DBC,EWJ,EWU,FXI,EWT,INDA
 
 jobs:
-
   ablation:
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +47,6 @@ jobs:
           - INDA
 
     steps:
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -68,28 +63,95 @@ jobs:
           python scripts/fetch_yahoo.py
 
       - name: Build reduced universe
+        shell: bash
         run: |
-          SYMBOLS_REDUCED=$(echo "$SYMBOLS" | sed "s/${{ matrix.remove }}//g" | sed 's/,,/,/g' | sed 's/^,//' | sed 's/,$//')
-          echo "REDUCED=$SYMBOLS_REDUCED" >> $GITHUB_ENV
+          python - << 'PY'
+          import os
+          symbols = os.environ["SYMBOLS"].split(",")
+          remove = "${{ matrix.remove }}"
+          reduced = [s for s in symbols if s and s != remove]
+          print("REDUCED=" + ",".join(reduced))
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+            f.write("REDUCED=" + ",".join(reduced) + "\n")
+          PY
 
       - name: Run backtest
         run: |
           PYTHONPATH=. python run_backtest_multi.py \
-          --tag ablation_minus_${{ matrix.remove }} \
-          --symbols "$REDUCED"
+            --tag ablation_minus_${{ matrix.remove }} \
+            --symbols "$REDUCED"
 
-      - name: Collect results
-        run: |
-          python scripts/collect_ablation.py
-
-      - name: Upload summary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ablation_summary
-          path: data/outputs/ablation_summary.csv     
-
-      - name: Upload artifacts
+      - name: Upload summary.json only (fast)
         uses: actions/upload-artifact@v4
         with:
           name: ablation_${{ matrix.remove }}
-          path: data/outputs/ablation_minus_${{ matrix.remove }}/
+          path: data/outputs/ablation_minus_${{ matrix.remove }}/summary.json
+
+  collect:
+    runs-on: ubuntu-latest
+    needs: ablation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps (pandas)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas
+
+      - name: Download all ablation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ablation_artifacts
+
+      - name: Collect into one CSV
+        shell: bash
+        run: |
+          python - << 'PY'
+          import json
+          import pandas as pd
+          from pathlib import Path
+
+          root = Path("ablation_artifacts")
+          rows = []
+          for p in root.rglob("summary.json"):
+            # p parent name like ablation_BTC or nested; we infer removed from path parts
+            # artifact folder usually root/<artifact_name>/summary.json
+            parts = p.parts
+            removed = None
+            for part in parts:
+              if part.startswith("ablation_"):
+                removed = part.replace("ablation_", "")
+                break
+            with open(p) as f:
+              data = json.load(f)
+            summ = data.get("summary", data)  # tolerate both shapes
+            rows.append({
+              "removed": removed or "UNKNOWN",
+              "CAGR": summ.get("CAGR"),
+              "MaxDD": summ.get("MaxDD"),
+              "ProfitFactor": summ.get("ProfitFactor"),
+              "NumTrades": summ.get("NumTrades"),
+              "HitRate": summ.get("HitRate"),
+              "EndEquity": summ.get("EndEquity"),
+            })
+
+          df = pd.DataFrame(rows)
+          if df.empty:
+            raise SystemExit("No summary.json found in downloaded artifacts")
+
+          df = df.sort_values(["CAGR","ProfitFactor"], ascending=False)
+          out = Path("ablation_summary.csv")
+          df.to_csv(out, index=False)
+          print(df.head(20).to_string(index=False))
+          print("Wrote", out)
+          PY
+
+      - name: Upload ablation summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ablation_summary
+          path: ablation_summary.csv

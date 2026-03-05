@@ -1,165 +1,63 @@
 # STATE.md
 
-## Version actuelle
-v0.4.0
+## Version
+v0.5.0 (branche `core-monthly`)
 
----
+## Ce qui est implémenté
 
-# Implémenté
+### Backtest multi-actifs
+- Exécution : signal sur `close[t]`, entrée sur `open[t+1]`
+- Coûts : fee + slippage
+- Stops intraday (selon implémentation)
+- Logs : `equity_curve.csv`, `trades.csv`, `summary.json`
 
-## Backtest multi-actifs
-
-- exécution next open
-- stops intraday
-- gestion du risque portefeuille
-- fees + slippage
-
-Artefacts générés :
-
-equity_curve.csv  
-trades.csv  
-summary.json
-
----
-
-## Indicateurs
-
-- SMA
+### Indicateurs
+- SMA (daily + weekly aggregate selon modules)
 - ATR
-- rolling high (anti-lookahead)
-- momentum
+- Rolling highs/lows anti-lookahead
+- Momentum (cross-asset)
 
----
+### Architecture core / satellite
+- `src/sleeves.py` orchestre :
+  - sleeve core (ETF)
+  - sleeve satellite (crypto, optionnel)
+  - agrégation et éventuel vol targeting
 
-## Architecture core / satellite
+### Univers dynamique
+- crypto : `scripts/make_crypto_monthly.py` -> `data/universe/crypto_monthly.csv`
+- core : `data/universe/core_monthly.csv` (si utilisé) ou sélection “dynamic” via panel
 
-Implémentée via :
+## Découvertes / fixes récents
 
-src/sleeves.py
+### Fix 1 — `core_top_n` ignoré
+Cause : `core_top_n` absent de `Config`, donc les overrides CLI/workflows n’avaient aucun effet.
+Fix : ajout du champ `core_top_n` dans `src/config.py`.
 
-Structure :
+### Fix 2 — confusion “schedule vs dynamic”
+Si `data/universe/core_monthly.csv` existe, la sélection core est figée par fichier et peut neutraliser un sweep `core_top_n`.
+Protocole : pour tester l’effet de `core_top_n`, supprimer/ignorer le schedule core dans le workflow.
 
-core ETF  
-+  
-satellite crypto
+## Résultats récents (core-only)
 
----
+Observations générales :
+- Le moteur “survit” aux cycles (pas d’effondrement complet)
+- Certaines périodes sont défavorables (trend faible/latent)
+- La perf agrégée core-only est modeste (CAGR typiquement ~2–3% dans plusieurs runs), avec DD ~15–20%
 
-## Univers
+⚠️ Les variations proviennent souvent de :
+- univers (taille/constituants)
+- mode selection core (schedule/dynamic)
+- paramètres modifiés (breakout, max_positions, vol target)
+- activation/désactivation satellite crypto
 
-### Core ETF
+## Limites actuelles (factuelles)
+- CAGR faible en core-only sur plusieurs configurations
+- périodes 2013–2018 fréquemment difficiles (PF proche de 1 ou <1 dans certains runs)
+- concentration winners encore limitée sur certains runs (top winners pas “énormes”)
 
-SPY  
-QQQ  
-IWM  
-EFA  
-EEM  
-GLD  
-TLT  
-IEF  
-SHY
-
----
-
-### Satellite crypto
-
-BTC  
-ETH  
-BNB  
-SOL  
-XRP  
-ADA  
-DOGE  
-TRX  
-LINK
-
----
-
-## Univers crypto dynamique
-
-Pipeline :
-
-scripts/make_crypto_monthly.py
-
-Produit :
-
-data/universe/crypto_monthly.csv
-
-Univers figé par mois.
-
----
-
-# Validation
-
-Tests réalisés :
-
-- sensibilité paramètres
-- Monte Carlo
-- walk-forward
-- audit anti-lookahead
-- tests sous-périodes
-
----
-
-# Résultats récents
-
-Tests sous-périodes :
-
-2005–2012  
-CAGR ≈ 2 %
-
-2013–2018  
-CAGR ≈ −1 %
-
-2019–2026  
-CAGR ≈ 3–10 %
-
-Observation :
-
-- le core stabilise le portefeuille
-- la crypto apporte la convexité
-
----
-
-# Limites actuelles
-
-- nombre de trades encore faible
-- diversification core limitée
-- dépendance partielle aux cycles crypto
-
----
-
-# Prochain objectif
-
-1. position sizing par volatilité d’actif
-2. amélioration du stop ATR
-3. volatility targeting portefeuille
-
-## Tests récents
-
-Walk-forward :
-
-2005–2012
-2013–2018
-2019–2026
-
-Résultat :
-
-la stratégie survit à toutes les périodes testées.
-
-Profit factor > 1 sur la majorité des configurations.
-
----
-
-## Position sizing
-
-Tests :
-
-risk_per_trade = 0.0075 → DD faible
-risk_per_trade = 0.01
-risk_per_trade = 0.0125
-risk_per_trade = 0.015 → performance maximale
-
-Configuration retenue :
-
-risk_per_trade = 0.015
+## Prochain objectif (ordre)
+1) verrouiller un protocole d’évaluation reproductible (mêmes univers + même mode selection + mêmes tags)
+2) forward-universe (sélection out-of-sample) sur un pool ETF élargi
+3) améliorer les sorties / la capture des winners (exit logic) avec tests A/B stricts
+4) (optionnel) réintégration satellite crypto avec garde-fous
+5) préparation paper trading

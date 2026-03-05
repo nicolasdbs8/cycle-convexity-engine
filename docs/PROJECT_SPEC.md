@@ -35,6 +35,19 @@ Core ETF trend engine
 +  
 Satellite crypto opportuniste
 
+Core selection layer
+
+Le core peut être filtré par :
+
+- sélection mensuelle des actifs
+- ranking momentum cross-asset
+- limitation aux meilleurs trends
+
+Objectif :
+
+réduire le bruit
+et concentrer le risque sur les tendances dominantes.
+
 ---
 
 # 4. Core Trend Engine

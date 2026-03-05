@@ -9,39 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: multi_default
-      SYMBOLS: 
-        BTC,
-        ETH,
-        BNB,
-        SOL,
-        XRP,
-        ADA,
-        DOGE,
-        TRX,
-        LINK,
-        SPY,
-        QQQ,
-        IWM,
-        EFA,
-        EEM,
-        GLD,
-        TLT,
-        IEF,
-        SHY,
-        XLK,
-        XLF,
-        XLE,
-        XLY,
-        XLI,
-        XLP,
-        XLV,
-        XLB,
-        DBC,
-        EWJ,
-        EWU,
-        FXI,
-        EWT,
-        INDA
+      SYMBOLS: BTC,ETH,BNB,SOL,XRP,ADA,DOGE,TRX,LINK,SPY,QQQ,IWM,EFA,EEM,GLD,TLT,IEF,SHY,XLK,XLF,XLE,XLY,XLI,XLP,XLV,XLB,DBC,EWJ,EWU,FXI,EWT,INDA
     steps:
       - uses: actions/checkout@v4
 

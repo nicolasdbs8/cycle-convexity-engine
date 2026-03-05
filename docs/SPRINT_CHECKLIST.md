@@ -1,98 +1,51 @@
-# SPRINT_CHECKLIST.md
+# SPRINT_CHECKLIST — cycle-convexity-engine
 
-Projet : cycle-convexity-engine
+## Baseline (référence de travail)
+- breakout: 150
+- stop: 2.5 * ATR(20)
+- regime: MA52 weekly
+- costs: fee 0.1% / slippage 0.05%
+- max_positions: 3
+- risk_cap_total: 0.06
+- risk_per_trade: 0.015
+- core_top_n: variable (sweep)
+- core schedule: ON/OFF selon test
 
-Checklist opérationnelle.
+## Sprints terminés
+1) Backtester multi-actifs + outputs standard
+2) Filtre de régime
+3) Validation robustesse initiale (WF + MC)
+4) Architecture core/satellite (`sleeves.py`)
+5) Univers crypto mensuel (anti-lookahead)
+6) Core selection (Top-N) + debug param `core_top_n`
 
----
+## Sprint actuel — Normalisation des tests
+Objectif : arrêter les comparaisons “non-comparables”.
 
-# Baseline actuelle
+Checklist :
+- [ ] benchmark universe figé (liste tickers)
+- [ ] benchmark dates figées
+- [ ] benchmark mode : core schedule ON/OFF explicite
+- [ ] tags standardisés (baseline / wf_2005_2012 / etc.)
+- [ ] collect automatique des summaries en un CSV unique
 
-breakout = 150  
-stop = 2.5 ATR  
-regime = MA52  
-max_positions = 3  
-risk_cap_total = 0.06  
+## Sprint suivant — Forward universe (core)
+Objectif : sélectionner un univers ETF élargi sans lookahead.
 
-Allocation :
+Livrables :
+- workflow “forward_universe” (build -> evaluate -> select)
+- output: data/universe/core_forward.csv
+- rapport : perf OOS par ajout d’actifs (greedy / stepwise)
 
-core = 90 %  
-sat = 10 %
+## Sprint 8 — Exits
+Objectif : améliorer capture des winners sans complexité excessive.
+- candidates : Donchian exit / MA exit / ATR trailing “proper”
+- protocole : A/B strict avec benchmark immuable
 
----
+## Sprint 9 — Volatility targeting portefeuille
+Objectif : stabiliser la vol sans tuer le CAGR.
+- scaler borné (min/max)
+- métriques : vol réalisée, DD, CAGR
 
-# Sprints terminés
-
-Sprint 1 — Backtester multi-actifs  
-Sprint 2 — Filtre de régime  
-Sprint 3 — Validation robustesse  
-Sprint 4 — Architecture core / satellite  
-Sprint 5 — Univers crypto dynamique  
-
----
-
-# Sprint actuel
-
-Stabilisation du moteur.
-
----
-
-# Sprint suivant
-
-### Sprint 6 — Position sizing volatilité actif
-
-Objectif :
-
-équilibrer le risque entre actifs.
-
-Implémentation :
-
-position_size ∝ 1 / ATR
-
----
-
-### Sprint 7 — Exit amélioré
-
-Objectif :
-
-améliorer capture de tendance.
-
-Pistes :
-
-ATR trailing  
-ou  
-stop Donchian
-
----
-
-### Sprint 8 — Volatility targeting portefeuille
-
-Objectif :
-
-stabiliser la volatilité du portefeuille.
-
----
-
-### Sprint 9 — Diversification core
-
-Objectif :
-
-augmenter le nombre de trades.
-
-Pistes :
-
-- nouveaux ETF
-- futures proxies
-- secteurs equity
-
----
-
-### Sprint 10 — Execution layer
-
-Objectif :
-
-paper trading.
-
-Script :
-
-make_orders.py
+## Sprint 10 — Execution layer (paper trading)
+Objectif : produire orders + logs journaliers, sans discrétion.
